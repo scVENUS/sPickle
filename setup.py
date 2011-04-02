@@ -67,5 +67,6 @@ Python 3 version.
         'paramiko>=1.7.6'
       ],
       platforms="any",
+      test_suite="sPickle"
     
     )
