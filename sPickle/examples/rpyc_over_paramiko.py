@@ -18,18 +18,53 @@
 
 from __future__ import absolute_import
 import sys
+import imp
+import os.path
 
 import sPickle
 import rpyc
 import paramiko
+import pickletools
 
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
 
 
 
 
 def main(args):
     print "Hello, World!"
+    
+    l = []
+    pickler = sPickle.Pickler(l)
+    pickler.serializeableModules.append("/rpyc/")
 
+    t = imp.find_module("rpyc_classic", [ os.path.join(p, "scripts") for p in rpyc.__path__])
+    try:
+        m = imp.load_module("rpyc.__rpyc_classic_server", *t)
+    finally:
+        t[0].close()
+
+    args = ["--mode", 'stdio', "--quiet"]
+
+    imp.acquire_lock()
+    try:
+        argv_saved = sys.argv
+        try:
+            sys.argv = [sys.argv[0]] + list(args)
+            options = m.get_options()
+        finally:
+            sys.argv = argv_saved
+    finally:
+        imp.release_lock()
+    handler = getattr(m, options.handler)
+    
+    # pickler.dump((handler, options))
+    pickler.dump(rpyc)
+    p = pickletools.optimize("".join(l))
+    pickletools.dis(p, None, None, 4)
 
 if __name__ == '__main__':
     main(sys.argv[1:])
