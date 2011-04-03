@@ -22,7 +22,8 @@ import pickle
 import cPickle
 import pickletools
 import thread
-import os
+import os.path
+import collections
 
 saved_dispatch = pickle.Pickler.dispatch.copy()
 saved_dispatch_table = pickle.dispatch_table.copy()
@@ -183,40 +184,97 @@ class Pickler(pickle.Pickler):
     This pickler supports pickling of modules and program state
     """
     
-    @staticmethod
-    def mustSerialize(obj):
+    def mustSerialize(self, obj):
         """test, if a module must be serialised"""
-        return bool(getattr(obj, "__wf_module__", None))
+        # Legacy check for flowGuide2 workflow modules 
+        if getattr(obj, "__wf_module__", None):
+            return True
+        if obj in self.serializeableModules:
+            return True
+        for item in self.serializeableModules:
+            if obj is item:
+                return True
+            if isinstance(item, basestring):
+                if obj.__name__ and obj.__name__.startswith(item):
+                    return True
+                f = getattr(obj, "__file__", None)
+                if f and os.path.normcase(os.path.normpath(f)).find(
+                        os.path.normcase(os.path.normpath(item))) != -1:
+                    return True
+                
+        
     
     
-    def __init__(self, listish, protocol=pickle.HIGHEST_PROTOCOL):
-        assert isinstance(listish, list)
-        assert protocol >= 2
+    
+    
+    def __init__(self, file, protocol=pickle.HIGHEST_PROTOCOL):
+        """This takes a file-like or a list-like object for writing a pickle data stream.
+
+        The optional protocol argument tells the pickler to use the
+        given protocol; the only supported protocol is 2.  The default
+        protocol is 2. (Protocol 0 is the
+        only protocol that can be written to a file opened in text
+        mode and read back successfully.  When using a protocol higher
+        than 0, make sure the file is opened in binary mode, both when
+        pickling and unpickling.)
+
+        Specifying a negative protocol version selects the highest
+        protocol version supported.  The higher the protocol used, the
+        more recent the version of Python needed to read the pickle
+        produced.
+
+        The file parameter must have a write() method that accepts a single
+        string argument.  It can thus be an open file object, a StringIO
+        object, or any other custom object that meets this interface.
+        As an alternative you can use a list or any other instance of 
+        collections.MutableSequence.
+
+        """
+        if protocol < 0:
+            protocol = pickle.HIGHEST_PROTOCOL
+        if protocol != pickle.HIGHEST_PROTOCOL:
+            raise pickle.PickleError("The sPickle Pickler supports protocol %d only. Requested protocol was %d" %(pickle.HIGHEST_PROTOCOL, protocol))
+
+        self.__fileIsList = isinstance(file, collections.MutableSequence)
+        if self.__fileIsList:
+            listish = file
+        else:
+            listish = []
+            self.__write = file.write
+            
         pickle.Pickler.__init__(self, List2Writable(listish), protocol)
         self.writeList = listish
-        self.dispatch = self.__class__.dispatch.copy()
         
+        # copy and patch the dispatch table
+        self.dispatch = self.__class__.dispatch.copy()
         for k in pickle.Pickler.dispatch.iterkeys():
             f = getattr(Pickler, pickle.Pickler.dispatch[k].__name__, None)
             if f.__func__ is not pickle.Pickler.dispatch[k]:
                 self.dispatch[k] = f.__func__
         self.dispatch[thread.LockType] = self.saveLock.__func__
-        self.dispatch[file] = self.saveFile.__func__
+        self.dispatch[types.FileType] = self.saveFile.__func__
         self.dispatch[socket.SocketType] = self.saveSocket.__func__
         self.dispatch[SOCKET_PAIR_TYPE] = self.saveSocketPairSocket.__func__
         
         #self.dispatch[types.ModuleType] = Pickler.saveModule
         
         # initiallize the module_dict_ids module dict lookup table
+        # this stackless specific call creates the dict self.module_dict_ids
         self._pickle_moduledict(self, {})
         self.object_dict_ids = {}
+        
+        self.serializeableModules = [] 
 
     def dump(self, obj):
         """Write a pickled representation of obj to the open file."""
-        if self.proto >= 2:
-            self.write(pickle.PROTO + chr(self.proto))
-        self.dict_checkpoint(obj, self.save)
-        self.write(pickle.STOP)
+        try:
+            if self.proto >= 2:
+                self.write(pickle.PROTO + chr(self.proto))
+            self.dict_checkpoint(obj, self.save)
+            self.write(pickle.STOP)
+        finally:
+            if not self.__fileIsList:
+                self.__write("".join(self.writeList))
 
     def dict_checkpoint(self, obj, method, *args, **kw):
         """Checkpint for dictionary backtracking"""
