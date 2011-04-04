@@ -25,6 +25,9 @@ import sPickle
 import rpyc
 import paramiko
 import pickletools
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 try:
     from cStringIO import StringIO
@@ -40,6 +43,7 @@ def main(args):
     l = []
     pickler = sPickle.Pickler(l)
     pickler.serializeableModules.append("/rpyc/")
+    pickler.serializeableModules.append("logging")
 
     t = imp.find_module("rpyc_classic", [ os.path.join(p, "scripts") for p in rpyc.__path__])
     try:
@@ -62,7 +66,8 @@ def main(args):
     handler = getattr(m, options.handler)
     
     # pickler.dump((handler, options))
-    pickler.dump(rpyc)
+    from rpyc import utils as obj
+    pickler.dump(obj)
     p = pickletools.optimize("".join(l))
     pickletools.dis(p, None, None, 4)
 
