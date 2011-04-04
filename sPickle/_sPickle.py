@@ -53,7 +53,22 @@ else:
     _s.close()
     del _s
     
-
+
+WRAPPER_DESCRIPTOR_TYPE = type(object.__getattribute__)
+METHOD_DESCRIPTOR_TYPE = type(object.__format__)
+METHOD_WRAPPER_TYPE = type((1).__add__)
+
+EMPTY_LIST_ITERATOR = iter([])
+LISTITERATOR_TYPE = type(EMPTY_LIST_ITERATOR)
+
+EMPTY_TUPLE_ITERATOR = iter(())
+TUPLEITERATOR_TYPE = type(EMPTY_TUPLE_ITERATOR)
+
+EMPTY_RANGE_ITERATOR = iter(xrange(0))
+RANGEITERATOR_TYPE = type(EMPTY_RANGE_ITERATOR)
+
+EMPTY_SET_ITERATOR = iter(set())
+SETITERATOR_TYPE = type(EMPTY_SET_ITERATOR)
 __LOGGER = None
 def LOGGER():
     global __LOGGER
@@ -160,7 +175,7 @@ def create_closed_socketpair_socket():
     so.close()
     return s
     
-class DictAlreadyExistError(pickle.PicklingError):
+class DictAlreadyExistError(pickle.PickleError):
     """The dictionary of an object has been pickled prior to the object itself.
     
     This exception is used for backtracking. Its 'obj'-attribute
@@ -169,6 +184,14 @@ class DictAlreadyExistError(pickle.PicklingError):
     def __init__(self, msg, obj, *args, **kw):
         super(DictAlreadyExistError, self).__init__(msg, *args, **kw)
         self.obj = obj
+
+class UnpicklingWillFailError(pickle.PicklingError):
+    """This object can be pickled, but unpickling will probably fail.
+    
+    This usually caused by an incomplete implementation of the pickling 
+    protocol or by a hostile __getattr__ or __getattribute__ method.
+    """
+    pass
         
 class List2Writable(object):
     """A simple list to file adapter.
@@ -255,7 +278,9 @@ class Pickler(pickle.Pickler):
         self.dispatch[types.FileType] = self.saveFile.__func__
         self.dispatch[socket.SocketType] = self.saveSocket.__func__
         self.dispatch[SOCKET_PAIR_TYPE] = self.saveSocketPairSocket.__func__
-        
+        self.dispatch[WRAPPER_DESCRIPTOR_TYPE] = self.saveWrapperOrMethodDescriptor.__func__
+        self.dispatch[METHOD_DESCRIPTOR_TYPE] = self.saveWrapperOrMethodDescriptor.__func__
+        
         #self.dispatch[types.ModuleType] = Pickler.saveModule
         
         # initiallize the module_dict_ids module dict lookup table
@@ -291,6 +316,11 @@ class Pickler(pickle.Pickler):
                     self.save(currentSave)
                     self.write(pickle.POP)
                 currentSave = None
+                # Check the memo again, in case of a backtrack, that created obj
+                x = self.memo.get(id(obj))
+                if x:
+                    self.write(self.get(x[0]))
+                    return
                 method(obj, *args, **kw)
                 done = True
             except DictAlreadyExistError, e:
@@ -325,7 +355,10 @@ class Pickler(pickle.Pickler):
             self.write(self.get(x[0]))
             return
 
-        objDict = getattr(obj, "__dict__", None)
+        try:
+            objDict = getattr(obj, "__dict__", None)
+        except Exception:
+            objDict = None
         if isinstance(objDict, types.DictType):
             dictId = id(objDict)
             x = self.memo.get(dictId)
@@ -347,6 +380,42 @@ class Pickler(pickle.Pickler):
             finally:
                 if trace_func is not None:
                     obj.f_trace = trace_func
+                    
+        if obj is WRAPPER_DESCRIPTOR_TYPE:
+            return self.save_reduce(type, (object.__getattribute__,), obj=obj)
+        if obj is METHOD_DESCRIPTOR_TYPE:
+            return self.save_reduce(type, (object.__format__,), obj=obj)
+        if obj is METHOD_WRAPPER_TYPE:
+            return self.save_reduce(type, ((1).__add__, ), obj=obj)
+        if obj is LISTITERATOR_TYPE:
+            return self.save_reduce(type, (EMPTY_LIST_ITERATOR,), obj=obj)
+        if obj is TUPLEITERATOR_TYPE:
+            return self.save_reduce(type, (EMPTY_TUPLE_ITERATOR,), obj=obj)
+        if obj is RANGEITERATOR_TYPE:
+            return self.save_reduce(type, (EMPTY_RANGE_ITERATOR,), obj=obj)
+        if obj is SETITERATOR_TYPE:
+            return self.save_reduce(type, (EMPTY_SET_ITERATOR,), obj=obj)
+        if obj is EMPTY_LIST_ITERATOR:
+            return self.save_reduce(iter, ([],), obj=obj)
+        if obj is EMPTY_TUPLE_ITERATOR:
+            return self.save_reduce(iter, ((),), obj=obj)
+        if obj is EMPTY_RANGE_ITERATOR:
+            return self.save_reduce(iter, (xrange(0),), obj=obj)
+        if obj is EMPTY_SET_ITERATOR:
+            return self.save_reduce(iter, (set(),), obj=obj)
+                                
+        # handle __new__ anbd similar methods of built-in types        
+        if (isinstance(obj, type(object.__new__)) and 
+            getattr(obj,"__name__", None) in ('__new__', '__subclasshook__')):
+            return self.saveBuiltinNew(obj)
+
+        # avoid problems with some classes, that implement 
+        # __getattribute__ or __getattr__ in a way, 
+        # that getattr(obj, "__setstate__", None) raises an exception.
+        try:
+            getattr(obj, "__setstate__", None)
+        except Exception, e:
+            raise UnpicklingWillFailError("Object %r has hostile attribute access: %r" % (obj, e))
                 
         self.super_save(obj)
  
@@ -355,12 +424,21 @@ class Pickler(pickle.Pickler):
     
     def memoize(self, obj):
         """Store an object in the memo."""
-        objDict = getattr(obj, "__dict__", None)
+        try:
+            objDict = getattr(obj, "__dict__", None)
+        except Exception:
+            objDict = None
         if isinstance(objDict, types.DictType):
             dictId = id(objDict)
             # x = self.memo.get(dictId)
             
             self.object_dict_ids[dictId] = obj
+
+        if id(obj) in self.memo:
+            m = self.memo[id(obj)]
+            LOGGER().error("Object already in memo! Id: %d, Obj: %r of type %r, Memo: %d=%r of type %r", 
+                         id(obj), obj, type(obj), 
+                         m[0], m[1], type(m[1]))
         return self.__class__.__bases__[0].memoize(self, obj)
         
     def save_dict(self, obj):
@@ -409,23 +487,27 @@ class Pickler(pickle.Pickler):
                 module = pickle.whichmodule(obj, name)
 
         try:
-            try:
-                __import__(module)
-                mod = sys.modules[module]
-                klass = getattr(mod, name)
-            except (ImportError, KeyError, AttributeError):
-                raise pickle.PicklingError(
-                    "Can't pickle %r: it's not found as %s.%s" %
-                    (obj, module, name))
-            else:
-                if klass is not obj:
-                    raise pickle.PicklingError(
-                        "Can't pickle %r: it's not the same object as %s.%s" %
-                        (obj, module, name))
-        except pickle.PicklingError:
+            __import__(module)
+            mod = sys.modules[module]
+            klass = getattr(mod, name)
+        except (ImportError, KeyError, AttributeError):
             if t in (type, types.ClassType):
                 return self.saveClass(obj)
-            raise
+            raise pickle.PicklingError(
+                "Can't pickle %r: it's not found as %s.%s" %
+                (obj, module, name))
+        else:
+            if klass is not obj:
+                if mod is sys and hasattr(mod, "__" + name + "__"):
+                    # special case for some functions from sys. 
+                    # Sys contains two copies of these functions, one 
+                    # named <name> and the other named "__<name>__".  
+                    return self.save_global(obj, "__"+name+"__", pack)
+                if t in (type, types.ClassType):
+                    return self.saveClass(obj)
+                raise pickle.PicklingError(
+                    "Can't pickle %r: it's not the same object as %s.%s" %
+                    (obj, module, name))
 
         if self.proto >= 2:
             code = pickle._extension_registry.get((module, name))
@@ -452,6 +534,37 @@ class Pickler(pickle.Pickler):
         
         write(pickle.GLOBAL + module + '\n' + name + '\n')
         self.memoize(obj)
+
+    def save_function(self, obj):
+        memo = self.memo
+        writePos = len(self.writeList) 
+        memoPos = len(memo)
+        try:
+            return self.save_global(obj)
+        except pickle.PicklingError, e:
+            LOGGER().debug("Failed to pickle function %r using save_global: %r", obj, e)
+            del self.writeList[writePos:]
+            for k in memo.keys():
+                v= memo[k]
+                if isinstance(v, types.TupleType):
+                    if v[0] >= memoPos:
+                        del memo[k]
+        # Check copy_reg.dispatch_table
+        reduce = pickle.dispatch_table.get(type(obj))
+        if reduce:
+            rv = reduce(obj)
+        else:
+            # Check for a __reduce_ex__ method, fall back to __reduce__
+            reduce = getattr(obj, "__reduce_ex__", None)
+            if reduce:
+                rv = reduce(self.proto)
+            else:
+                reduce = getattr(obj, "__reduce__", None)
+                if reduce:
+                    rv = reduce()
+                else:
+                    raise e
+        return self.save_reduce(obj=obj, *rv)
 
     def saveClass(self, obj):
         f = type(obj)
@@ -539,6 +652,20 @@ class Pickler(pickle.Pickler):
         LOGGER().warn("Pickling socket-pair socket %r as closed socket", obj)
         return self.save_reduce(create_closed_socketpair_socket, (), obj=obj)
 
+    def saveBuiltinNew(self, obj):
+        t = obj.__self__
+        if obj is not getattr(t, obj.__name__) and  obj.__name__ != '__subclasshook__':
+            raise pickle.PicklingError("Can't pickle %r: it's not the same object as %s.%s" %
+                        (obj, t, obj.__name__))
+        return self.save_reduce(getattr, (t, obj.__name__), obj=obj)
+        
+    def saveWrapperOrMethodDescriptor(self, obj):
+        t = obj.__objclass__
+        if obj is not getattr(t, obj.__name__):
+            raise pickle.PicklingError("Can't pickle %r: it's not the same object as %s.%s" %
+                        (obj, t, obj.__name__))
+        return self.save_reduce(getattr, (t, obj.__name__), obj=obj)
+        
 class WfPickler(object):
     
     def save(self, fileish, obj, *more):

@@ -33,6 +33,11 @@ import functools
 import tabnanny
 import os
 import socket
+import collections
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
 
 from .. import _sPickle as pickler
 from . import wf_module 
@@ -51,6 +56,45 @@ def functionWithArg(arg):
 decoratedFunction = functools.partial(functionWithArg, 4711)
 functools.update_wrapper(decoratedFunction, functionWithArg)
 del functionWithArg
+
+
+class ModuleWithOrderedDict(types.ModuleType):
+    __slots__=("__od__",)
+    def __new__(cls, name, *doc):
+        m = super(ModuleWithOrderedDict, cls).__new__(cls, name, *doc)
+        od = collections.OrderedDict()
+        od["__name__"] = name
+        od["__doc__"] = doc[0] if len(doc) > 0 else None
+        object.__setattr__(m, "__od__", od)
+        return m
+    def __setattr__(self, name, value):
+        object.__getattribute__(self, "__od__")[name] = value
+        super(ModuleWithOrderedDict, self).__setattr__(name, value)
+    def __getattribute__(self, name):
+        if name in ("__slots__", "__od__"):
+            raise AttributeError("%r object has no attribute %r" % (type(self).__name__, name))
+        if name == "__dict__":           
+            return object.__getattribute__(self, "__od__")
+        return object.__getattribute__(self, name)
+    
+modForPartiallyUnpickleable = ModuleWithOrderedDict("modForPartiallyUnpickleable")
+sys.modules["modForPartiallyUnpickleable"] = modForPartiallyUnpickleable
+modForPartiallyUnpickleable.__wf_module__ = True
+modForPartiallyUnpickleable.True = True
+
+# A function, within modForPartiallyUnpickleable
+# This triggers a problem in pickle.Pickler.save_function
+partiallyUnpickleableFunction = types.FunctionType(aFunction.func_code, 
+                                                   modForPartiallyUnpickleable.__dict__)
+modForPartiallyUnpickleable.aFunction = partiallyUnpickleableFunction
+
+class IntentionallyUnpicleableError(pickle.PicklingError):
+    pass
+class UnpickleableClass(object):
+    def __reduce_ex__(self, proto):
+        raise IntentionallyUnpicleableError("Intentionally unpickleable")
+modForPartiallyUnpickleable.unpickleable = UnpickleableClass()
+del modForPartiallyUnpickleable
 
 class PlainClass(object):
     def __init__(self, state = None):
@@ -181,6 +225,26 @@ class TestImportFunctor(object):
         return False
         
 
+class ClassWithHostile__getattr__(object):
+    def __init__(self, allow_setstate):
+        self.allow_setstate = allow_setstate
+    
+    def __getattr__(self, name):
+        if name == "__setstate__" and self.allow_setstate:
+            raise AttributeError(name)
+        raise Exception("This __getattr__ always raises an exception")
+
+class ClassWithHostile__getattribute__(object):
+    def __init__(self, allow_setstate):
+        self.allow_setstate = allow_setstate
+    
+    def __getattribute__(self, name):
+        if name == "__setstate__" and object.__getattribute__(self, "allow_setstate"):
+            raise AttributeError(name)
+        if name in ("__reduce_ex__", "__reduce__", "__class__"):
+            return object.__getattribute__(self, name)
+        
+        raise Exception("This __getattribute__ always raises an exception: %r" % name)
         
 class PickelingTest(TestCase):
     """
@@ -218,7 +282,7 @@ class PickelingTest(TestCase):
             exinfo = sys.exc_info()
             l = []
             try:
-                pickler.FgPickler(l, 2).dump(toBeDumped)
+                pickler.Pickler(l, 2).dump(toBeDumped)
             except:
                 try:
                     l.append(pickle.STOP)
@@ -440,7 +504,12 @@ class PickelingTest(TestCase):
         self.assertTrue(f())
         obj = self.wfFunctionTest(f, dis=False)
         self.assertTrue(obj())
-    
+        
+    def testPartiallyUnpickleable(self):
+        f = partiallyUnpickleableFunction
+        self.assertTrue(f())
+        self.assertRaises(IntentionallyUnpicleableError, self.pickler.dumps, f)
+            
     def wfFunctionTest(self, function, preObjects=None, dis=False):
         orig = function
         p = self.dumpWithPreobjects(preObjects, orig, dis=dis)
@@ -485,7 +554,109 @@ class PickelingTest(TestCase):
         self.assertIsInstance(obj, thread.LockType)
         self.assertTrue(obj.locked())
         
+    def testObject__delattr__(self):
+        orig = object.__delattr__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
 
+    def testObject__format__(self):
+        orig = object.__format__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__getattribute__(self):
+        orig = object.__getattribute__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__hash__(self):
+        orig = object.__hash__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__init__(self):
+        orig = object.__init__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__new__(self):
+        orig = object.__new__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__reduce__(self):
+        orig = object.__reduce__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__reduce_ex__(self):
+        orig = object.__reduce_ex__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__repr__(self):
+        orig = object.__repr__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__setattr__(self):
+        orig = object.__setattr__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__sizeof__(self):
+        orig = object.__sizeof__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__str__(self):
+        orig = object.__str__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testObject__subclasshook__(self):
+        orig = object.__subclasshook__
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertEqual(repr(obj), repr(orig))
+        # There seems to be a python bug: 
+        # [kruis@aragvi ~]$ python2.7 -c "print object.__subclasshook__ is object.__subclasshook__"
+        # False
+        #
+        # self.assertIs(obj, orig)
+
+    def testModuleNew(self):
+        orig = types.ModuleType.__new__
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+        
+        
+    def testRpycBuiltinTypes(self):
+        from rpyc.core.netref import _builtin_types
+        errors = []
+        for t in _builtin_types:
+            try:
+                p = self.dumpWithPreobjects(None, t, dis=False)
+                obj = self.pickler.loads(p)[-1]
+            except Exception:
+                errors.append("Exception while pickling type %r: %s" % (t, traceback.format_exc()))
+            else:
+                if t is not obj:
+                    errors.append("Expected type %r, got type %r" % (t, obj))
+        self.assertFalse(errors, os.linesep.join(errors))
     # Tests for pickling classes
     
     def testClassicClass(self):
@@ -569,6 +740,36 @@ class PickelingTest(TestCase):
             socket_.close()
             sp[0].close()
         
+        
+    # Test hostile objects
+    def testClassWithHostile__getattr__(self):
+        self.classCopyTest(ClassWithHostile__getattr__, False)
+
+    def testObjectWithHostile__getattr__1(self):
+        orig = ClassWithHostile__getattr__(False)
+        self.assertRaises(pickler.UnpicklingWillFailError, self.dumpWithPreobjects, None, orig)
+
+    def testObjectWithHostile__getattr__2(self):
+        orig = ClassWithHostile__getattr__(True)
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        # import pickle as pickle_ ; pickler.cPickle =  pickle_
+        restored = self.pickler.loads(p)[-1]
+        self.assertIsNot(restored, orig)
+        self.assertIsInstance(restored, orig.__class__)
+    def testClassWithHostile__getattribute__(self):
+        self.classCopyTest(ClassWithHostile__getattribute__, False)
+
+    def testObjectWithHostile__getattribute__1(self):
+        orig = ClassWithHostile__getattribute__(False)
+        self.assertRaises(pickler.UnpicklingWillFailError, self.dumpWithPreobjects, None, orig)
+
+    def testObjectWithHostile__getattribute__2(self):
+        orig = ClassWithHostile__getattribute__(True)
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        # import pickle as pickle_ ; pickler.cPickle =  pickle_
+        restored = self.pickler.loads(p)[-1]
+        self.assertIsNot(restored, orig)
+        self.assertIsInstance(restored, orig.__class__)
         
 
 if __name__ == "__main__":
