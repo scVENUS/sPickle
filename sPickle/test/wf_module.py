@@ -20,7 +20,7 @@
 
 from __future__ import absolute_import
 
-__wf_module__ = True
+__module_must_be_pickled__ = True
 
 from . import wf_modul2
 

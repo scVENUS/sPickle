@@ -35,11 +35,12 @@ import os
 import socket
 import collections
 import logging
+import operator
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
-from .. import _sPickle as pickler
+from .. import _sPickle
 from . import wf_module 
 
 
@@ -47,6 +48,12 @@ from . import wf_module
 
 def aFunction():
     """A plain global function """
+    return True
+def aFunction2():
+    """A plain global function 2"""
+    return True
+def aFunction3():
+    """A plain global function 3"""
     return True
 
 def functionWithArg(arg):
@@ -79,7 +86,7 @@ class ModuleWithOrderedDict(types.ModuleType):
     
 modForPartiallyUnpickleable = ModuleWithOrderedDict("modForPartiallyUnpickleable")
 sys.modules["modForPartiallyUnpickleable"] = modForPartiallyUnpickleable
-modForPartiallyUnpickleable.__wf_module__ = True
+setattr(modForPartiallyUnpickleable, _sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME, True)
 modForPartiallyUnpickleable.True = True
 
 # A function, within modForPartiallyUnpickleable
@@ -158,7 +165,7 @@ def isOk():
 
 anonymousModule = buildModule("anonymousModule")
 anonymousWfModule = buildModule("anonymousWfModule")
-anonymousWfModule.__wf_module__ = True
+setattr(anonymousWfModule, _sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME, True)
 
 class StrangeModuleType(types.ModuleType):
     """Modules of this type have an 'isOk()' function, that is 
@@ -180,7 +187,7 @@ class StrangeModuleType(types.ModuleType):
                 self.syntheticFunctions[id(self)] = f
             return f
         raise AttributeError(name)
-    __wf_module__ = True
+setattr(StrangeModuleType, _sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME, True)
 
 strangeModule = StrangeModuleType("strangeModule")
 sys.modules[strangeModule.__name__] = strangeModule
@@ -259,7 +266,7 @@ class PickelingTest(TestCase):
         return TestCase.run(self, result)
     
     def setUp(self):
-        self.pickler = pickler.WfPickler()
+        self.pickler = _sPickle.SPickleTools()
         
     def tearDown(self):
         pass
@@ -282,7 +289,7 @@ class PickelingTest(TestCase):
             exinfo = sys.exc_info()
             l = []
             try:
-                pickler.Pickler(l, 2).dump(toBeDumped)
+                _sPickle.Pickler(l, 2).dump(toBeDumped)
             except:
                 try:
                     l.append(pickle.STOP)
@@ -657,6 +664,101 @@ class PickelingTest(TestCase):
                 if t is not obj:
                     errors.append("Expected type %r, got type %r" % (t, obj))
         self.assertFalse(errors, os.linesep.join(errors))
+        
+    def testTypeStaticmethod(self):
+        orig = staticmethod
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testStaticmethod(self):
+        orig = staticmethod(aFunction)
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(type(obj), type(orig))
+        self.assertIsNot(obj, orig)
+        self.assertIs(obj.__func__, orig.__func__)
+
+    def testTypeClassmethod(self):
+        orig = classmethod
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+        
+    def testClassmethod(self):
+        orig = classmethod(aFunction)
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(type(obj), type(orig))
+        self.assertIsNot(obj, orig)
+        self.assertIs(obj.__func__, orig.__func__)
+        
+    def testTypeProperty(self):
+        orig = property
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+        
+    def testProperty(self):
+        doc = "docstring"        
+        orig = property(aFunction, aFunction2, aFunction3, doc)
+        self.assertIs(orig.fget, aFunction)
+        self.assertIs(orig.fset, aFunction2)
+        self.assertIs(orig.fdel, aFunction3)
+        self.assertEqual(orig.__doc__, doc)
+
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(type(obj), type(orig))
+        self.assertIsNot(obj, orig)
+        self.assertIs(obj.fget, aFunction)
+        self.assertIs(obj.fset, aFunction2)
+        self.assertIs(obj.fdel, aFunction3)
+        self.assertEqual(obj.__doc__, doc)
+        
+    def testTypeOperatorItemgetter(self):
+        orig = operator.itemgetter
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testOperatorItemgetter(self):
+        orig = operator.itemgetter(1,3,5)
+        self.assertTupleEqual(('B', 'D', 'F'), orig("ABCDEFG"))
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(type(obj), type(orig))
+        self.assertIsNot(obj, orig)
+        self.assertTupleEqual(('B', 'D', 'F'), obj("ABCDEFG"))
+
+    def testTypeOperatorAttrgetter(self):
+        orig = operator.attrgetter
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testOperatorAttrgetter(self):
+        target = lambda : None
+        target.a = 1
+        target.b = lambda : None
+        target.b.c = 2
+        target.d = lambda : None
+        target.d.e = lambda : None
+        target.d.e.f = 3
+        target.x = 99
+        target.y = 98
+        target.b.x= 97
+        
+        orig = operator.attrgetter("a","b.c","d.e.f")
+        
+        self.assertTupleEqual((1, 2, 3), orig(target))
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(type(obj), type(orig))
+        self.assertIsNot(obj, orig)
+        self.assertTupleEqual((1, 2, 3), obj(target))
+
+        
     # Tests for pickling classes
     
     def testClassicClass(self):
@@ -669,6 +771,18 @@ class PickelingTest(TestCase):
             anAttribute = None
         self.classCopyTest(NewStyleClass)
 
+    def testNewStyleClassWithSlots(self):
+        class NewStyleClassWithSlots(object):
+            __slots__ = ("slot1", "slot2")
+            anAttribute = None
+        self.classCopyTest(NewStyleClassWithSlots)
+
+    def testNewStyleClassWithSlotsAndDict(self):
+        class NewStyleClassWithSlotsAndDict(object):
+            __slots__ = ("slot1", "slot2", "__dict__")
+            anAttribute = None
+        self.classCopyTest(NewStyleClassWithSlotsAndDict)
+
     def testRecursiveClass(self):
         cls = self.classCopyTest(P.RecursiveClass)
         cls().run(self)
@@ -677,9 +791,16 @@ class PickelingTest(TestCase):
         cls = self.classCopyTest(pickle.Pickler)
         self.assertTrue(cls is pickle.Pickler)
         
+    def testNamedTuple(self):
+        cls = self.classCopyTest(collections.namedtuple("namedTupleName", "a b"), dis=False)
+        nt = cls(1, 2)
+        self.assertTupleEqual(nt, (1,2))
+        self.assertEqual(nt.a, 1)
+        self.assertEqual(nt.b, 2)
+        
     def classCopyTest(self, origCls, dis=False):
-        p = self.pickler.dumps(origCls)
-        cls = self.pickler.loads(p)
+        p = self.dumpWithPreobjects(None,origCls, dis=dis)
+        cls = self.pickler.loads(p)[-1]
         self.assertTrue(type(cls) is type(origCls))
         self.assertEqual(cls.__name__, origCls.__name__)
         self.assertEqual(cls.__module__, origCls.__module__)
@@ -691,7 +812,9 @@ class PickelingTest(TestCase):
             v1 = getattr(cls, k)
             v2 = getattr(origCls, k)
             self.assertEqual(type(v1), type(v2), "key: %r type: %r != %r" % (k, v1, v2))
-            self.assertEqual(repr(v1), repr(v2), "key: %r repr: %r != %r" % (k, v1, v2))
+            if " at 0x" not in repr(v2):
+                self.assertEqual(repr(v1), repr(v2), "key: %r repr: %r != %r" % (k, v1, v2))
+            self.assertEqual(getattr(v1,"__name__", "Object has no Name"), getattr(v2,"__name__", "Object has no Name"))
         return cls
         
     # Import tests
@@ -727,7 +850,7 @@ class PickelingTest(TestCase):
             self.assertEqual(len(orig), len(restored))
             for i in range(len(orig)-1):
                 self.assertIs(type(orig[i]), type(restored[i]))
-            self.assertIsInstance(restored[-1][1], pickler.SOCKET_PAIR_TYPE)
+            self.assertIsInstance(restored[-1][1], _sPickle.SOCKET_PAIR_TYPE)
             self.assertIs(orig[2], restored[2])
             
             self.assertEqual(orig[0].mode, restored[0].mode)
@@ -747,7 +870,7 @@ class PickelingTest(TestCase):
 
     def testObjectWithHostile__getattr__1(self):
         orig = ClassWithHostile__getattr__(False)
-        self.assertRaises(pickler.UnpicklingWillFailError, self.dumpWithPreobjects, None, orig)
+        self.assertRaises(_sPickle.UnpicklingWillFailError, self.pickler.dumps, orig)
 
     def testObjectWithHostile__getattr__2(self):
         orig = ClassWithHostile__getattr__(True)
@@ -761,7 +884,7 @@ class PickelingTest(TestCase):
 
     def testObjectWithHostile__getattribute__1(self):
         orig = ClassWithHostile__getattribute__(False)
-        self.assertRaises(pickler.UnpicklingWillFailError, self.dumpWithPreobjects, None, orig)
+        self.assertRaises(_sPickle.UnpicklingWillFailError, self.pickler.dumps, orig)
 
     def testObjectWithHostile__getattribute__2(self):
         orig = ClassWithHostile__getattribute__(True)

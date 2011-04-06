@@ -21,7 +21,7 @@ import sys
 import re
 
 
-__wf_module__ = True
+__module_must_be_pickled__ = True
 
 def isOk():
     return True

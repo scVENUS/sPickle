@@ -24,6 +24,8 @@ import pickletools
 import thread
 import os.path
 import collections
+import operator
+import functools
 
 saved_dispatch = pickle.Pickler.dispatch.copy()
 saved_dispatch_table = pickle.dispatch_table.copy()
@@ -52,6 +54,8 @@ else:
     SOCKET_PAIR_TYPE = type(_s._sock)
     _s.close()
     del _s
+
+MODULE_TO_BE_PICKLED_FLAG_NAME="__module_must_be_pickled__"
     
 
 WRAPPER_DESCRIPTOR_TYPE = type(object.__getattribute__)
@@ -95,7 +99,7 @@ else:
 
 
 #
-# the next 4 functions are used to unpickle modules
+# the next 7 functions are used to unpickle modules
 #
 
 def create_module(cls, name, doc=None):
@@ -130,9 +134,11 @@ def save_modules_entry(name):
     del sys.modules[name]
     return mod
 
-def restore_modules_entry(doDel, old, new):
+_preservedModules = {}
+def restore_modules_entry(doDel, old, new, preserveReferenceToNew=True):
     """Restore the content of sys.modules."""
     try:
+        _preservedModules[id(new)] = new
         if doDel and sys.modules.has_key(new.__name__) and old == ():
             del sys.modules[new.__name__]
         if old != ():
@@ -174,7 +180,9 @@ def create_closed_socketpair_socket():
     s = so._sock
     so.close()
     return s
+
     
+        
 class DictAlreadyExistError(pickle.PickleError):
     """The dictionary of an object has been pickled prior to the object itself.
     
@@ -207,30 +215,7 @@ class Pickler(pickle.Pickler):
     This pickler supports pickling of modules and program state
     """
     
-    def mustSerialize(self, obj):
-        """test, if a module must be serialised"""
-        # Legacy check for flowGuide2 workflow modules 
-        if getattr(obj, "__wf_module__", None):
-            return True
-        if obj in self.serializeableModules:
-            return True
-        for item in self.serializeableModules:
-            if obj is item:
-                return True
-            if isinstance(item, basestring):
-                if obj.__name__ and obj.__name__.startswith(item):
-                    return True
-                f = getattr(obj, "__file__", None)
-                if f and os.path.normcase(os.path.normpath(f)).find(
-                        os.path.normcase(os.path.normpath(item))) != -1:
-                    return True
-                
-        
-    
-    
-    
-    
-    def __init__(self, file, protocol=pickle.HIGHEST_PROTOCOL):
+    def __init__(self, file, protocol=pickle.HIGHEST_PROTOCOL, serializeableModules=None):
         """This takes a file-like or a list-like object for writing a pickle data stream.
 
         The optional protocol argument tells the pickler to use the
@@ -257,6 +242,10 @@ class Pickler(pickle.Pickler):
             protocol = pickle.HIGHEST_PROTOCOL
         if protocol != pickle.HIGHEST_PROTOCOL:
             raise pickle.PickleError("The sPickle Pickler supports protocol %d only. Requested protocol was %d" %(pickle.HIGHEST_PROTOCOL, protocol))
+        
+        if serializeableModules is None:
+            serializeableModules = []
+        self.serializeableModules = serializeableModules
 
         self.__fileIsList = isinstance(file, collections.MutableSequence)
         if self.__fileIsList:
@@ -280,15 +269,45 @@ class Pickler(pickle.Pickler):
         self.dispatch[SOCKET_PAIR_TYPE] = self.saveSocketPairSocket.__func__
         self.dispatch[WRAPPER_DESCRIPTOR_TYPE] = self.saveWrapperOrMethodDescriptor.__func__
         self.dispatch[METHOD_DESCRIPTOR_TYPE] = self.saveWrapperOrMethodDescriptor.__func__
-        
-        #self.dispatch[types.ModuleType] = Pickler.saveModule
-        
-        # initiallize the module_dict_ids module dict lookup table
+        self.dispatch[staticmethod] = self.saveStaticOrClassmethod.__func__
+        self.dispatch[classmethod] = self.saveStaticOrClassmethod.__func__
+        self.dispatch[property] = self.saveProperty.__func__
+        self.dispatch[operator.itemgetter] = self.saveOperatorItemgetter.__func__
+        self.dispatch[operator.attrgetter] = self.saveOperatorAttrgetter.__func__
+                # initiallize the module_dict_ids module dict lookup table
         # this stackless specific call creates the dict self.module_dict_ids
         self._pickle_moduledict(self, {})
         self.object_dict_ids = {}
         
-        self.serializeableModules = [] 
+    def mustSerialize(self, obj):
+        """test, if a module must be serialised"""
+        # Legacy check for flowGuide2 workflow modules
+        try:
+            return bool(getattr(obj, MODULE_TO_BE_PICKLED_FLAG_NAME))
+        except Exception:
+            pass # Attribute is not present
+        
+        for item in self.serializeableModules:
+            if obj is item:
+                break
+            elif isinstance(item, basestring):
+                if obj.__name__ and obj.__name__.startswith(item):
+                    break
+                else:
+                    f = getattr(obj, "__file__", None)
+                    if f and os.path.normcase(os.path.normpath(f)).find(
+                        os.path.normcase(os.path.normpath(item))) != -1:
+                        break
+        else:
+            return False
+        try:
+            # Mark the module. The mark will be pickled and therefore 
+            # the unpickled module will be considered beeing "mustSerialize" too 
+            setattr(obj, MODULE_TO_BE_PICKLED_FLAG_NAME, True)
+        except Exception, e:
+            LOGGER().debug("Ohh, module %r is not writable: %r", obj.__name__, e)
+        return True
+        
 
     def dump(self, obj):
         """Write a pickled representation of obj to the open file."""
@@ -571,7 +590,7 @@ class Pickler(pickle.Pickler):
         name = obj.__name__
         d1 = {}; d2 = {}
         for (k, v) in obj.__dict__.iteritems():
-            if k in ('__doc__', '__module__'):
+            if k in ('__doc__', '__module__', '__slots__'):
                 d1[k] = v
                 continue
             if type(v) in (types.DictProxyType, types.GetSetDescriptorType, types.MemberDescriptorType):
@@ -665,15 +684,62 @@ class Pickler(pickle.Pickler):
             raise pickle.PicklingError("Can't pickle %r: it's not the same object as %s.%s" %
                         (obj, t, obj.__name__))
         return self.save_reduce(getattr, (t, obj.__name__), obj=obj)
-        
-class WfPickler(object):
     
-    def save(self, fileish, obj, *more):
-        fileish.write(self.dumps(obj, *more))
+    def saveStaticOrClassmethod(self, obj):
+        return self.save_reduce(type(obj), (obj.__func__, ), obj=obj)
+    
+    def saveProperty(self,obj):
+        return self.save_reduce(type(obj), (obj.fget, obj.fset, obj.fdel, obj.__doc__), obj=obj)
+    
+    class OperatorItemgetterProbe(object):
+        def __init__(self):
+            self.items = []
+        def __getitem__(self, key):
+            self.items.append(key)
+            return None
+        
+    def saveOperatorItemgetter(self, obj):
+        probe = self.OperatorItemgetterProbe()
+        obj(probe)
+        return self.save_reduce(type(obj), tuple(probe.items), obj=obj)
+    
+    class OperatorAttrgetterProbe(object):
+        def __init__(self, record, index=None):
+            self.record = record
+            self.index = index
+        def __getattribute__(self, name):
+            record = object.__getattribute__(self, "record")
+            index = object.__getattribute__(self, "index")
+            if index is None:
+                index = len(record)
+                record.append(name)
+            else:
+                record[index] = record[index] + "." + name
+            return type(self)(record, index)
+    
+    def saveOperatorAttrgetter(self, obj):
+        record = []
+        probe = self.OperatorAttrgetterProbe(record)
+        obj(probe)
+        return self.save_reduce(type(obj), tuple(record), obj=obj)
+    
+        
+class SPickleTools(object):
+    """A collection of simple utility methods.
+    
+    Warning: this API is still in development. Don't rely on this 
+    methods. If you need a stable API use the Pickler class directly 
+    or copy the code.
+    """
+    
+    def __init__(self, serializeableModules=None):
+        if serializeableModules is None:
+            serializeableModules = []
+        self.serializeableModules = serializeableModules
         
     def dumps(self, obj, persistent_id = None):
         l = []
-        pickler = Pickler(l, 2)
+        pickler = Pickler(l, 2, serializeableModules=self.serializeableModules)
         if persistent_id is not None:
             pickler.persistent_id = persistent_id
         pickler.dump(obj)
@@ -697,18 +763,17 @@ class WfPickler(object):
         pickle = self.dumps(obj, persistent_id)
         return pickle
     
-    def loads_with_external_ids(self, str, idmap):
+    @classmethod
+    def loads_with_external_ids(cls, str, idmap):
         def persistent_load(oid):
             try:
                 return idmap[oid]
             except KeyError:
                 raise cPickle.UnpicklingError("Invalid id %r" % (oid,))
-        return self.loads(str, persistent_load)
+        return cls.loads(str, persistent_load)
     
-    #def load(file):
-    #    return Unpickler(file).load()
-
-    def loads(self, str, persistent_load=None):
+    @classmethod
+    def loads(cls, str, persistent_load=None):
         if str.startswith("BZh9"):
             str = decompress(str)
         file = StringIO(str)
@@ -717,12 +782,14 @@ class WfPickler(object):
             unpickler.persistent_load = persistent_load
         return unpickler.load()
 
-    def dis(self, str, out=None, memo=None, indentlevel=4):
+    @classmethod
+    def dis(cls, str, out=None, memo=None, indentlevel=4):
         if str.startswith("BZh9"):
             str = decompress(str)
         pickletools.dis(str, out, memo, indentlevel)
         
-    def getImportList(self, str):   
+    @classmethod
+    def getImportList(cls, str):   
         """returns a list containing all imported modules from the pickled 
         data.
         """
@@ -734,4 +801,36 @@ class WfPickler(object):
             if opcodes[0].name == "GLOBAL": 
                 importModules.append(opcodes[1])
         return importModules        
+          
+    def remotemethod(self, rpycconnection, method):
+        def wrapper(*args, **keywords):
+            rmethod = self._build_remotemethod(rpycconnection, method)
+            r0, r1 = rmethod(*args, **keywords)
+            if r0 is None:
+                return r1
+            idmap = {}
+            idmap.update(r1)
+            return self.loads_with_external_ids(r0, idmap)
+        functools.update_wrapper(wrapper, method)
+        return wrapper
+
                 
+    def _build_remotemethod(self, rpycconnection, method):
+        """return a remote method"""
+        idmap = {}
+        pickle = self.dumps_with_external_ids(method, idmap, matchResources=True)
+        rcls = rpycconnection.root.getmodule(self.__class__.__module__)
+        rcls = getattr(rcls, self.__class__.__name__)
+        remotemethod = rcls()._build_remotemethod_remote(pickle, idmap)
+        return remotemethod
+    
+    def _build_remotemethod_remote(self, pickle, idmap):
+        m = self.loads_with_external_ids(pickle, idmap)
+        def returnWrapper(*args, **keywords):
+            r = m(*args, **keywords)
+            if isRpycProxy(r):
+                return (None, r)
+            idmap = {}
+            pickle = self.dumps_with_external_ids(r, idmap, matchNetref=True)
+            return (pickle, idmap)
+        return returnWrapper
