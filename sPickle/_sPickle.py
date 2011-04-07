@@ -138,7 +138,8 @@ _preservedModules = {}
 def restore_modules_entry(doDel, old, new, preserveReferenceToNew=True):
     """Restore the content of sys.modules."""
     try:
-        _preservedModules[id(new)] = new
+        if preserveReferenceToNew:
+            _preservedModules[id(new)] = new
         if doDel and sys.modules.has_key(new.__name__) and old == ():
             del sys.modules[new.__name__]
         if old != ():
@@ -630,7 +631,7 @@ class Pickler(pickle.Pickler):
             # create the module
             self.save_reduce(create_module, (type(obj), obj.__name__, getattr(obj, "__doc__", None)), obj.__dict__, obj=obj)
         finally:
-            restore_modules_entry(True, savedModule, obj)
+            restore_modules_entry(True, savedModule, obj, preserveReferenceToNew=False)
             
         if doDel or not reload:
             write(pickle.TUPLE3+pickle.REDUCE)
