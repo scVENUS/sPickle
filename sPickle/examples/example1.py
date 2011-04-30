@@ -34,7 +34,6 @@ import collections
 
 
 import sPickle
-import pickletools
 
 import rpyc_over_paramiko
 
