@@ -16,7 +16,7 @@
 #  limitations under the License.
 #
 
-"""Example 1: transfer a function and its dependencies
+"""Example 2: transfer a function and its dependencies
 
 This example pickles a function and its dependencies (here: a class and the 
 enclosing module), transfer the pickle to a remote computer, execute it, 

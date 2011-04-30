@@ -72,11 +72,14 @@ Plan
 * Move the source code repository to github
 * Add more examples
 * Add some documentation
-* Replace our internal version of the code by the 
-  fabulous sPickle package :-)
 
 Changes
 =======
+
+Version xxxxx
+-------------
+Renamed example1 to example2, new example1.
+Use sPickle in flowGuide instead of the original flowGuide pickle code.
 
 Version 0.0.2
 -------------
