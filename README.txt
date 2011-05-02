@@ -78,6 +78,8 @@ Changes
 
 Version xxxxx
 -------------
+New example1: checkpointing of programs.
+Fixed a few problems.
 Renamed example1 to example2, new example1.
 Use sPickle in flowGuide instead of the original flowGuide pickle code.
 
