@@ -22,7 +22,8 @@ from pickle import *
 del Pickler
 from ._sPickle import ( Pickler,
                         SPickleTools,
-                        MODULE_TO_BE_PICKLED_FLAG_NAME ) 
+                        MODULE_TO_BE_PICKLED_FLAG_NAME,
+                        StacklessTaskletReturnValueException ) 
 from pickle import __all__
 
 __all__ = __all__[:]

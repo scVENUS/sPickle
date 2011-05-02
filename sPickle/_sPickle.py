@@ -858,3 +858,15 @@ class SPickleTools(object):
             pickle = self.dumps_with_external_ids(r, idmap, matchNetref=True)
             return (pickle, idmap)
         return returnWrapper
+
+class StacklessTaskletReturnValueException(BaseException):
+    """This exception can be used to return a value from a Stackless Python tasklet.
+    
+    Usually a tasklet has no way to return a value at the end of its live. But it can 
+    raise an exception. Therefore we use this exception to encapsulate a return value.
+    
+    Because this exception is not a real error and we do not want this exception 
+    to be caught, we derive it from BaseException instead of Exception.
+    """
+    def __init__(self, value):
+        self.value = value
