@@ -390,13 +390,14 @@ class Pickler(pickle.Pickler):
         if isinstance(obj, types.ModuleType):
             if self.saveModule(obj):
                 return
-            
+
+        super_save = self.__class__.__bases__[0].save
         if isinstance(obj, types.FrameType):
             trace_func = obj.f_trace
             if trace_func is not None:
                 obj.f_trace = self.TraceFunctionSurrogate()
             try:
-                return self.super_save(obj)
+                return super_save(self, obj)
             finally:
                 if trace_func is not None:
                     obj.f_trace = trace_func
@@ -442,11 +443,7 @@ class Pickler(pickle.Pickler):
         except Exception, e:
             raise UnpicklingWillFailError("Object %r has hostile attribute access: %r" % (obj, e))
                 
-        self.super_save(obj)
- 
-    def super_save(self, obj):
-        return self.__class__.__bases__[0].save(self, obj)
-    
+        return super_save(self, obj)
     def memoize(self, obj):
         """Store an object in the memo."""
         try:
@@ -592,6 +589,7 @@ class Pickler(pickle.Pickler):
         return self.save_reduce(obj=obj, *rv)
 
     def saveClass(self, obj):
+        write = self.write
         f = type(obj)
         name = obj.__name__
         d1 = {}; d2 = {}
@@ -604,9 +602,20 @@ class Pickler(pickle.Pickler):
             if k in ('__dict__', '__class__' ):
                 continue
             d2[k] = v
-        self.save_reduce(f,(name, obj.__bases__, d1), (None,d2), obj=obj)
-    
-    
+        self.save_reduce(f,(name, obj.__bases__, d1), obj=obj)
+        
+        # Use setattr to set the remaining class members. 
+        # unfortunately, we can't use the state parameter of the 
+        # save_reduce method (pickle BUILD-opcode), because BUILD 
+        # invokes a __setstate__ method eventually inherited from 
+        # a super class.
+        keys = d2.keys()
+        keys.sort()
+        for k in keys:
+            v = d2[k]
+            self.save_reduce(setattr, (obj, k, v))
+            write(pickle.POP)
+
     def saveModule(self, obj, reload=False):
         write = self.write
         
@@ -787,11 +796,12 @@ class SPickleTools(object):
         return cls.loads(str, persistent_load)
     
     @classmethod
-    def loads(cls, str, persistent_load=None):
+    def loads(cls, str, persistent_load=None, useCPickle=True):
         if str.startswith("BZh9"):
             str = decompress(str)
         file = StringIO(str)
-        unpickler = cPickle.Unpickler(file)
+        p = cPickle if useCPickle else pickle
+        unpickler = p.Unpickler(file)
         if persistent_load is not None:
             unpickler.persistent_load = persistent_load
         return unpickler.load()

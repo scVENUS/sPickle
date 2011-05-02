@@ -814,6 +814,11 @@ class PickelingTest(TestCase):
         self.assertEqual(nt.a, 1)
         self.assertEqual(nt.b, 2)
         
+    def testExceptionClass(self):
+        class TestException(BaseException):
+            attribute = "attribute value"
+        self.classCopyTest(TestException, dis=True)
+
     def classCopyTest(self, origCls, dis=False):
         p = self.dumpWithPreobjects(None,origCls, dis=dis)
         cls = self.pickler.loads(p)[-1]
