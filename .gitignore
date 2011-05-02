@@ -13,3 +13,6 @@
 /build/
 /sPickle.egg-info/
 /*.egg/
+
+# created by the example
+/sPickle/examples/example1.pickle
