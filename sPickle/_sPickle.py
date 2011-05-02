@@ -429,6 +429,11 @@ class Pickler(pickle.Pickler):
             getattr(obj,"__name__", None) in ('__new__', '__subclasshook__')):
             return self.saveBuiltinNew(obj)
 
+        if ( isinstance(obj, types.BuiltinMethodType) and 
+             hasattr(obj, "__self__") and 
+             obj.__self__ is not None ):
+            return self.saveBuiltinMethod(obj)
+
         # avoid problems with some classes, that implement 
         # __getattribute__ or __getattr__ in a way, 
         # that getattr(obj, "__setstate__", None) raises an exception.
@@ -678,6 +683,14 @@ class Pickler(pickle.Pickler):
             raise pickle.PicklingError("Can't pickle %r: it's not the same object as %s.%s" %
                         (obj, t, obj.__name__))
         return self.save_reduce(getattr, (t, obj.__name__), obj=obj)
+    
+    def saveBuiltinMethod(self, obj):
+        objSelf = obj.__self__
+        objName = obj.__name__
+        if getattr(objSelf, objName, None) != obj:
+            raise pickle.PicklingError("Can't pickle %r: it's not the same object as %s.%s" %
+                        (obj, objSelf, objName))
+        return self.save_reduce(getattr, (objSelf, objName), obj=obj)
         
     def saveWrapperOrMethodDescriptor(self, obj):
         t = obj.__objclass__

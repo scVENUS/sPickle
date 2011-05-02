@@ -561,6 +561,22 @@ class PickelingTest(TestCase):
         self.assertIsInstance(obj, thread.LockType)
         self.assertTrue(obj.locked())
         
+    def testThreadLockAcquire(self):
+        self.builtinMethodTest(thread.allocate_lock(), "acquire")
+    def testThreadLockRelease(self):
+        self.builtinMethodTest(thread.allocate_lock(), "release")
+    def testThreadLockLocked(self):
+        self.builtinMethodTest(thread.allocate_lock(), "locked")
+
+    def builtinMethodTest(self, obj, methodName):
+        method = getattr(obj, methodName)
+        p = self.dumpWithPreobjects(method, obj, dis=False)
+        restoredMethod, restoredObj = self.pickler.loads(p)
+        self.assertIsInstance(restoredObj, thread.LockType)
+        self.assertIsNot(restoredObj, obj)
+        self.assertIs(restoredMethod.__self__, restoredObj)
+        self.assertEqual(restoredMethod, getattr(restoredObj, methodName))
+        
     def testObject__delattr__(self):
         orig = object.__delattr__
         p = self.dumpWithPreobjects(None,orig, dis=False)
