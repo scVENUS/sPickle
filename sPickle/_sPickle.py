@@ -26,6 +26,7 @@ import os.path
 import collections
 import operator
 import functools
+import inspect
 
 saved_dispatch = pickle.Pickler.dispatch.copy()
 saved_dispatch_table = pickle.dispatch_table.copy()
@@ -858,6 +859,56 @@ class SPickleTools(object):
             pickle = self.dumps_with_external_ids(r, idmap, matchNetref=True)
             return (pickle, idmap)
         return returnWrapper
+
+    @classmethod
+    def module_for_globals(cls, callable_or_moduledict, withDefiningModules=False):
+        """Get the module associated with a callable or a module dictionary.
+
+        If you pickle a module, make sure to keep a reference to unpickled module.
+        Otherwise the __del__-method of the module will clear the modules 
+        dictionary. Usually, the sPickle code for serializing modules, preserves 
+        a reference to modules created from a pickle but not imported into 
+        sys.modules. However, there might be cases, where you need to identify 
+        relevant modules yourself. This method can be used, to find the relevant module(s).
+
+        Return value: None, or a module or a set of modules
+        """
+        g = None
+        modules = []
+        result = set()
+        if isinstance(callable_or_moduledict, dict):
+            g = callable_or_moduledict
+        else:
+            func = callable_or_moduledict
+            if withDefiningModules:
+                try:
+                    modules.append(func.__module__)
+                except Exception:
+                    pass
+            if inspect.ismethod(func):
+                func = func.im_func
+                if withDefiningModules:
+                    try:
+                        modules.append(func.__module__)
+                    except Exception:
+                        pass
+            if inspect.isfunction(func):
+                g = func.func_globals
+        for i, v in enumerate(modules):
+            if v:
+                m = sys.modules.get(v)
+                if m is not None:
+                    result.add(m)
+        if g is not None:
+            for m in sys.modules.itervalues():
+                if g is getattr(m, '__dict__', None):
+                    result.add(m)
+        if len(result) == 0:
+            return None
+        if len(result) == 1:
+            return result.pop()
+        return result
+
 
 class StacklessTaskletReturnValueException(BaseException):
     """This exception can be used to return a value from a Stackless Python tasklet.

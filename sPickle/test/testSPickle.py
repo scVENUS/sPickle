@@ -817,7 +817,7 @@ class PickelingTest(TestCase):
     def testExceptionClass(self):
         class TestException(BaseException):
             attribute = "attribute value"
-        self.classCopyTest(TestException, dis=True)
+        self.classCopyTest(TestException, dis=False)
 
     def classCopyTest(self, origCls, dis=False):
         p = self.dumpWithPreobjects(None,origCls, dis=dis)
@@ -915,6 +915,13 @@ class PickelingTest(TestCase):
         self.assertIsNot(restored, orig)
         self.assertIsInstance(restored, orig.__class__)
         
+class SPickleToolsTest(TestCase):
+    def testModule_for_globals(self):
+        pt = _sPickle.SPickleTools()
+        self.assertIs(pt.module_for_globals({}), None)
+        self.assertIs(pt.module_for_globals(_sPickle.__dict__), _sPickle)
+        self.assertIs(pt.module_for_globals(pt.module_for_globals), _sPickle)
+        self.assertIs(pt.module_for_globals(pt.module_for_globals, withDefiningModules=True), _sPickle)
 
 if __name__ == "__main__":
     import unittest
