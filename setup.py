@@ -38,7 +38,10 @@ setup(
     author_email='a.kruis@science-computing.de',
     url='http://pypi.python.org/pypi/sPickle',
     packages=['sPickle', 'sPickle.test'],
+
+    # don't forget to add these files to MANIFEST.in too
     package_data={'sPickle': ['examples/*.py']},
+
     long_description=
 """
 sPickle is an extended version of the pickle module for Stackless Python
