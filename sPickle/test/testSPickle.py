@@ -774,6 +774,27 @@ class PickelingTest(TestCase):
         self.assertIsNot(obj, orig)
         self.assertTupleEqual((1, 2, 3), obj(target))
 
+    def testXrange(self):
+        orig = xrange(4,10,2)
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsInstance(obj, xrange)
+        self.assertListEqual(list(obj), list(orig))
+
+    def testRangeIterator(self):
+        x = xrange(2,10,2)
+        orig = iter(x)
+        lorig = []
+        lorig.append(orig.next())
+        lorig.append(orig.next())
+        lobj = lorig[:]
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        lorig.extend(orig)
+        self.assertListEqual(lorig, list(x))
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsInstance(obj, type(orig))
+        lobj.extend(obj)
+        self.assertListEqual(lobj, lorig)
         
     # Tests for pickling classes
     
