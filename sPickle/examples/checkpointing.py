@@ -29,6 +29,7 @@ import sys
 import types
 import sPickle
 import stackless
+import inspect
 
 class _CheckpointSupport(object):
     """Handler class"""
@@ -63,7 +64,7 @@ class _CheckpointSupport(object):
             while True:
                 tasklet.run()
                 cmd = tasklet.tempval
-                if cmd == _CheckpointSupport.CMD_CHECKPOINT:                
+                if cmd == _CheckpointSupport.CMD_CHECKPOINT:
                     result = pickler((self, tasklet))
                 # elif cmd == "another command":
                 #     ...
@@ -129,29 +130,58 @@ def resumeCheckpoint(checkpoint, *args, **keywords):
     return checkpointSupport._loop(tasklet, pt.dumps)
 
 if __name__ == "__main__":
+    import os
     import logging
     logging.basicConfig(level=logging.WARN)
+    import argparse
+    parser = argparse.ArgumentParser(description="Resume a check-pointed program.")
+    g=parser.add_mutually_exclusive_group(required=True)
+    g.add_argument("--demo", action="store_true", help='do not resume a program, but run the demo')
+    g.add_argument("--stdin", action="store_true", help='read the checkpoint from stdin')
+    g.add_argument("checkpoint_file", nargs='?', help='name of the checkpoint file')
+    parser.add_argument('--dis', action="store_true", help='dump the disassembled checkpoint to stdout')
+    parser.add_argument('args', help='arguments given to the resumed program', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
     
-    def sample(checkpointSupport):
-        internalState = 1
-        print "Internal state is ", internalState
-        while internalState < 3:
-            flag, result = checkpointSupport.forkAndCheckpoint()
-            if flag:
-                print "Created checkpoint"
-                return result
-            print "Resuming ..."
-            internalState += 1
+    if args.demo:
+        def sample(checkpointSupport):
+            internalState = 1
             print "Internal state is ", internalState
-        print "Done"
-        return 0
+            while internalState < 3:
+                flag, result = checkpointSupport.forkAndCheckpoint()
+                if flag:
+                    print "Created checkpoint"
+                    return result
+                print "Resuming ..."
+                internalState += 1
+                print "Internal state is ", internalState
+            print "Done"
+            return 0
+        
+        # the directory sPickle/examples is not in sys.path, therefore
+        # it is not possible to import modules from this directory. 
+        # Therefore ask the pickler to serialise those modules.
+        pt = sPickle.SPickleTools(serializeableModules=["sPickle/examples"])
+        
+        checkpoint = runCheckpointable(pt.dumps, sample, *args.args)
+        while isinstance(checkpoint, str):
+            checkpoint = resumeCheckpoint(checkpoint)
+        sys.exit(checkpoint)
     
-    # the directory sPickle/examples is not in sys.path, therefore
-    # it is not possible to import modules from this directory. 
-    # Therefore ask the pickler to serialise those modules.
-    pt = sPickle.SPickleTools(serializeableModules=["sPickle/examples"])
-    
-    checkpoint = runCheckpointable(pt.dumps, sample)
-    while isinstance(checkpoint, str):
-        checkpoint = resumeCheckpoint(checkpoint)
-    sys.exit(checkpoint)
+    # regular code
+    if args.stdin:
+        try:
+            import msvcrt
+        except ImportError:
+            pass
+        else:
+            msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
+        checkpoint = sys.stdin.read()
+    else:
+        f = open(args.checkpoint_file, "rb")
+        checkpoint = f.read()
+        f.close()
+    if args.dis:
+        sPickle.SPickleTools().dis(checkpoint)
+        sys.exit(0)
+    sys.exit(resumeCheckpoint(checkpoint, *args.args))
