@@ -70,18 +70,19 @@ Plan
 ====
 
 * Move the source code repository to github
-* Add more examples
-* Add some documentation
+* Add more documentation
+* Use sphinx
 
 Changes
 =======
 
-Version xxxxx
+Version 0.0.3
 -------------
-New example1: checkpointing of programs.
+Renamed example1 to example2 and added a new example1. Example1 now demonstrates
+checkpointing of programs, example2 demonstrates RPyC.  
 Fixed a few problems.
-Renamed example1 to example2, new example1.
 Use sPickle in flowGuide instead of the original flowGuide pickle code.
+
 
 Version 0.0.2
 -------------
