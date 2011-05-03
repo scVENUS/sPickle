@@ -33,6 +33,53 @@ import checkpointing
 import logging
 LOGGER = logging.getLogger(__name__)
 
+def long_running_function_with_checkpointing(checkpointSupport, *args, **keywords):
+    print "At program start"
+    print "  arguments: ", args
+    print "  keywords: ", keywords
+
+    print "Computing ...",
+    iterator = iter(xrange(1,21))
+    for i in iterator:
+        time.sleep(0.1)
+        print " ", i,
+        if i == 10:
+            break
+    print ""
+    
+    #
+    print "Checkpointing ..."
+    isCmdResult, result = checkpointSupport.forkAndCheckpoint()
+    if isCmdResult:
+        # result is the pickle
+        checkpointFile = keywords["checkpointFile"]
+        f = open(checkpointFile, "wb")
+        f.write(result)
+        f.close()
+        print "Saved state as %r" % (checkpointFile,)
+        return 0  # posix exit code
+    
+    # after restart
+    newArgs, newKeywords = result
+    
+    print "Restarted program resumes execution"
+    print "  original arguments: ", args
+    print "  original keywords: ", keywords
+    print "  new arguments: ", newArgs
+    print "  new keywords: ", newKeywords
+
+    print "Computing ...",
+    for i in iterator:
+        time.sleep(0.1)
+        print " ", i,
+    print ""
+    
+    print "Done."
+    
+    return 0 # posix exit code
+
+
+
 
 def main(argv):
     """Run this example
@@ -41,70 +88,27 @@ def main(argv):
 
     """
     checkpointFile = "example1.pickle"
-    step = argv.pop(0)
-    if step == "1":
-        
-        # initial start an functional logic
-        
-        def long_running_function_with_checkpointing(checkpointSupport, *args, **keywords):
-            print "At program start"
-            print "  arguments: ", args
-            print "  keywords: ", keywords
-        
-            print "Computing ...",
-            iterator = iter(xrange(42))
-            for i in iterator:
-                if i == 20:
-                    break
-                print " ", i,
-                time.sleep(0.1)
-            print ""
-            
-            #
-            print "Checkpointing ..."
-            isCmdResult, result = checkpointSupport.forkAndCheckpoint()
-            if isCmdResult:
-                # result is the pickle
-                checkpointFile = keywords["checkpointFile"]
-                f = open(checkpointFile, "wb")
-                f.write(result)
-                f.close()
-                print "Saved state as %r" % (checkpointFile,)
-                return 0  # posix exit code
-            
-            # after restart
-            newArgs, newKeywords = result
-            
-            print "Restarted program resumes execution"
-            print "  original arguments: ", args
-            print "  original keywords: ", keywords
-            print "  new arguments: ", newArgs
-            print "  new keywords: ", newKeywords
-        
-            print "Computing ...",
-            for i in iterator:
-                print " ", i,
-                time.sleep(0.1)
-            print ""
-            
-            print "Done."
-            
-            return 0 # posix exit code
-
+    mode = argv.pop(0)
+    if mode == "start":
+                
         from sPickle import SPickleTools
-        return checkpointing.runCheckpointable(SPickleTools().dumps, 
+        # always serialize __main__, because the main used during a resume 
+        # operation is most likely a different module loaded from a different file
+        pt = SPickleTools(serializeableModules=['__main__'])
+        return checkpointing.runCheckpointable(pt.dumps, 
                                                long_running_function_with_checkpointing, 
                                                checkpointFile = checkpointFile, 
                                                *argv)
-    
-    elif step == "2":
+
+    elif mode == "resume":
         
         # Resume the execution of the checkpoint
-        # Note: this step 2 does not define any functional logic
-        
+        # Note: this mode 2 does not define any functional logic.
+
         return checkpointing.resumeCheckpoint(open(checkpointFile, "rb").read(), *argv)
+
     else:
-        print >> sys.stderr, 'Usage: %s: "1" | "2"  [more arguments]' % (os.path.basename(__file__),) 
+        print >> sys.stderr, 'Usage: %s: [ "start" | "resume" ] ...' % (os.path.basename(__file__),) 
         return 1
         
 if __name__ == '__main__':
