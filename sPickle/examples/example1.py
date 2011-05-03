@@ -39,52 +39,40 @@ def long_running_function_with_checkpointing(checkpointSupport, *args, **keyword
     print "  keywords: ", keywords
 
     print "Computing ...",
-    iterator = iter(xrange(1,21))
-    for i in iterator:
-        time.sleep(0.1)
+    for i in xrange(1000):
         print " ", i,
-        if i == 10:
-            break
-    print ""
-    
-    #
-    print "Checkpointing ..."
-    isCmdResult, result = checkpointSupport.forkAndCheckpoint()
-    if isCmdResult:
-        # result is the pickle
-        checkpointFile = keywords["checkpointFile"]
-        f = open(checkpointFile, "wb")
-        f.write(result)
-        f.close()
-        print "Saved state as %r" % (checkpointFile,)
-        return 0  # posix exit code
-    
-    # after restart
-    newArgs, newKeywords = result
-    
-    print "Restarted program resumes execution"
-    print "  original arguments: ", args
-    print "  original keywords: ", keywords
-    print "  new arguments: ", newArgs
-    print "  new keywords: ", newKeywords
+        time.sleep(0.5)
+        sys.stdout.flush()
+        
+        isCmdResult, result = checkpointSupport.forkAndCheckpoint()
+        if isCmdResult:
+            # result is the pickle
+            checkpointFile = keywords["checkpointFile"]
+            f = open(checkpointFile, "wb")
+            f.write(result)
+            f.close()
+            f = None
+        else:
+            # after restart
+            newArgs, newKeywords = result
+            print "Restarted program resumes execution"
+            print "  original arguments: ", args
+            print "  original keywords: ", keywords
+            print "  new arguments: ", newArgs
+            print "  new keywords: ", newKeywords
+            print "  current i", i
 
-    print "Computing ...",
-    for i in iterator:
-        time.sleep(0.1)
-        print " ", i,
+            print "Computing ...",
     print ""
-    
     print "Done."
     
     return 0 # posix exit code
 
 
-
-
 def main(argv):
     """Run this example
     
-    Usage: main [hostname [commands to run the rpycserver on hostname]]
+    Usage: main [ "start" | "resume" ] ...
 
     """
     checkpointFile = "example1.pickle"
@@ -103,7 +91,8 @@ def main(argv):
     elif mode == "resume":
         
         # Resume the execution of the checkpoint
-        # Note: this mode 2 does not define any functional logic.
+        # Note: This mode 2 does not define any functional logic.
+        #       You can also use the checkpointing module to resume example 
 
         return checkpointing.resumeCheckpoint(open(checkpointFile, "rb").read(), *argv)
 
