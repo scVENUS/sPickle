@@ -100,9 +100,8 @@ else:
 
 
 #
-# the next 7 functions are used to unpickle modules
+# The next 7 functions are used to unpickle modules
 #
-
 def create_module(cls, name, doc=None):
     """create and imports a module.
     
@@ -135,12 +134,15 @@ def save_modules_entry(name):
     del sys.modules[name]
     return mod
 
-_preservedModules = {}
 def restore_modules_entry(doDel, old, new, preserveReferenceToNew=True):
     """Restore the content of sys.modules."""
     try:
         if preserveReferenceToNew:
-            _preservedModules[id(new)] = new
+            preservedModules = getattr(sys, "sPicklePreservedModules", None)
+            if preservedModules is None:
+                preservedModules = {}
+                sys.sPicklePreservedModules = preservedModules
+            preservedModules[id(new)] = new
         if doDel and sys.modules.has_key(new.__name__) and old == ():
             del sys.modules[new.__name__]
         if old != ():
@@ -149,7 +151,6 @@ def restore_modules_entry(doDel, old, new, preserveReferenceToNew=True):
         from imp import release_lock
         release_lock()
     return new
-
 
 def create_thread_lock(locked):
     """recreate a lock object"""
@@ -182,8 +183,35 @@ def create_closed_socketpair_socket():
     s = so._sock
     so.close()
     return s
-
     
+if True:
+    #
+    # Recreate the functions with __GLOBALS_DICT as their global 
+    # namesspace and a different function name. This way 
+    # their definitions get pickled "by value" and not as a reference 
+    # to this module
+    #
+    __GLOBALS_DICT = {'sys': sys,
+                      'thread': thread,
+                      'pickle': pickle,
+                      'os': os,
+                      'socket': socket,
+                      '__builtins__': __builtins__}   
+    __func = type(create_module)
+    create_module=__func(create_module.func_code, __GLOBALS_DICT, 'create_module_')
+    save_modules_entry=__func(save_modules_entry.func_code, __GLOBALS_DICT, 'save_modules_entry_')
+    restore_modules_entry=__func(restore_modules_entry.func_code, 
+                                 __GLOBALS_DICT, 
+                                 'restore_modules_entry_',
+                                 restore_modules_entry.func_defaults)
+    create_thread_lock = __func(create_thread_lock.func_code, __GLOBALS_DICT, 'create_thread_lock_')
+    create_null_file = __func(create_null_file.func_code, __GLOBALS_DICT, 'create_null_file_')
+    create_closed_socket = __func(create_closed_socket.func_code, __GLOBALS_DICT, 'create_closed_socket_')
+    create_closed_socketpair_socket = __func(create_closed_socketpair_socket.func_code,
+                                             __GLOBALS_DICT,
+                                            'create_closed_socketpair_socket_')
+    del __func
+    del __GLOBALS_DICT
         
 class DictAlreadyExistError(pickle.PickleError):
     """The dictionary of an object has been pickled prior to the object itself.
