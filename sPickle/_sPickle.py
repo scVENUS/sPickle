@@ -593,7 +593,7 @@ class Pickler(pickle.Pickler):
         try:
             return self.save_global(obj)
         except pickle.PicklingError, e:
-            LOGGER().debug("Failed to pickle function %r using save_global: %r", obj, e)
+            LOGGER().debug("Going to pickle function %r by value, because it can't be pickled as global: %r", obj, e)
             del self.writeList[writePos:]
             for k in memo.keys():
                 v= memo[k]
@@ -805,9 +805,17 @@ class SPickleTools(object):
         def persistent_id(obj):
             oid = id(obj)
             if oid in idmap:
-                return oid 
-            if (( matchResources and isinstance(obj, RESOURCE_TYPES) ) or
-                ( matchNetref and isRpycProxy(obj) )):
+                return oid
+            isResource = matchResources and isinstance(obj, RESOURCE_TYPES)
+            isNetRef = matchNetref and isRpycProxy(obj)
+            if isResource or isNetRef:
+                if isNetRef:
+                    objrepr = "RPyC Netref"
+                try:
+                    objrepr = repr(obj)
+                except Exception:
+                    objrepr = "-- repr failed --"
+                LOGGER().debug("Pickling object %s of type %r using persistent id %d", objrepr, type(obj), oid)
                 idmap[oid] = obj
                 return oid
             return None
