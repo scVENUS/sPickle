@@ -32,7 +32,7 @@ except ImportError:
 
 setup(
     name='sPickle',
-    version='0.0.3',
+    version='0.0.4',
     description='Extended Pickler for Stackless Python',
     author='Anselm Kruis',
     author_email='a.kruis@science-computing.de',

@@ -76,6 +76,12 @@ Plan
 Changes
 =======
 
+Version 0.0.4
+-------------
+Minor improvements, but unfortunately the documentation is still
+incomplete. I release this version, because I'm going to present this
+version in my talk at EuroPython 2011.
+
 Version 0.0.3
 -------------
 Renamed example1 to example2 and added a new example1. Example1 now demonstrates
