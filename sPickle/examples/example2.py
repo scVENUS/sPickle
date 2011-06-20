@@ -74,7 +74,7 @@ def doit(connection):
     # This works fine, if the remote host is "localhost" and does not 
     # hurt otherwise.
     rsys.path.append(os.path.dirname(os.path.dirname(sPickle.__file__)))
-    connection.execute("import sys; print 'Remote sys.path: %r' % sys.path")
+    #connection.execute("import sys; print 'Remote sys.path: %r' % sys.path")
 
     # the directory sPickle/examples is not in sys.path, therefore
     # it is not possible to import modules from this directory. 
@@ -83,9 +83,14 @@ def doit(connection):
     
     # This function encapsulates the operations to be performed on the 
     # remote side.
+    remoteLogger = logging.getLogger("remoteLogger")
     def function(param1, param2):
+        remoteLogger.info("Running on Host %r, PID %d", socket.gethostname(), os.getpid())
+        remoteLogger.info("Starting function with parameters: %r, %r", param1, param2)
         algorithm = ComputeTheAnswer(param1, param2)
+        remoteLogger.info("Computing ...")
         algorithm.compute()
+        remoteLogger.info("Computing is done.")
         return algorithm.getResult()
 
     # Pickle function, transfer it to the remote side, unpickle 
@@ -109,11 +114,13 @@ def main(argv):
 
     """
     host = argv.pop(0) if argv else socket.getfqdn()
-    if not argv:
-        argv = rpyc_over_paramiko.START_RPYC_CLASSIC_SERVER_ARGV
-    print "Host is: %r" % host
+    argv.extend(rpyc_over_paramiko.START_RPYC_CLASSIC_SERVER_ARGV[len(argv):])
+    if '@' in host:
+        username, host = host.split('@', 1)
+    else:
+        username = getpass.getuser()
+    print "Host is: %r  username is: %r" % (host, username)
     print "Command line is: %r" % argv
-    username = getpass.getuser()
     password = None  # I'm using an ssh agent
     
     connection = rpyc_over_paramiko.newRPyCConnectionOverParamiko(argv, host, username, password)
@@ -124,5 +131,8 @@ def main(argv):
     
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.WARN)
+    logging.basicConfig(level=logging.INFO, 
+                        # filename="example2.log"
+                        )
+    logging.getLogger().addHandler(logging.FileHandler("example2.log", mode='w'))
     main(sys.argv[1:])
