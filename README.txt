@@ -76,6 +76,11 @@ Plan
 Changes
 =======
 
+Version 0.0.5
+-------------
+Finally I found a few hours to add a nice documentation using Sphinx.
+Besides the documentation, there are a few cleanups.
+
 Version 0.0.4
 -------------
 Minor improvements, but unfortunately the documentation is still

@@ -29,10 +29,11 @@ except ImportError:
     print 'ERROR: sPickle requires Stackless Python to run.'
     sys.exit(1)
     
+from conf import release
 
 setup(
     name='sPickle',
-    version='0.0.4',
+    version=release,
     description='Extended Pickler for Stackless Python',
     author='Anselm Kruis',
     author_email='a.kruis@science-computing.de',

@@ -1,0 +1,5 @@
+.. # currentmodule:: sPickle
+
+.. automodule:: sPickle
+
+

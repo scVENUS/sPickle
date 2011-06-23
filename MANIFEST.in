@@ -1,1 +1,3 @@
 include sPickle/examples/*.py
+include conf.py
+include *.rst

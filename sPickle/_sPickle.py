@@ -240,33 +240,53 @@ class List2Writable(object):
         self.write = listish.append
                 
 class Pickler(pickle.Pickler):
-    """The flowGuide pickler.
+    """The sPickle Pickler.
     
-    This pickler supports pickling of modules and program state
+    This Pickler is a subclass of :class:`pickle.Pickler` that adds the ability 
+    to pickle modules, most classes and program state. It is intended to be 
+    API-compatible with :class:`pickle.Pickler` so you can use it as a plug in 
+    replacement. However its constructor has more optional arguments.
     """
     
     def __init__(self, file, protocol=pickle.HIGHEST_PROTOCOL, serializeableModules=None):
-        """This takes a file-like or a list-like object for writing a pickle data stream.
-
-        The optional protocol argument tells the pickler to use the
-        given protocol; the only supported protocol is 2.  The default
-        protocol is 2. (Protocol 0 is the
-        only protocol that can be written to a file opened in text
-        mode and read back successfully.  When using a protocol higher
-        than 0, make sure the file is opened in binary mode, both when
-        pickling and unpickling.)
-
-        Specifying a negative protocol version selects the highest
-        protocol version supported.  The higher the protocol used, the
-        more recent the version of Python needed to read the pickle
-        produced.
-
-        The file parameter must have a write() method that accepts a single
+        """
+        The file argument must be either an instance of :class:`collections.MutableSequence`
+        or have a `write(str)` - method that accepts a single
         string argument.  It can thus be an open file object, a StringIO
         object, or any other custom object that meets this interface.
         As an alternative you can use a list or any other instance of 
         collections.MutableSequence.
 
+        The optional protocol argument tells the pickler to use the
+        given protocol; For this implementation, 
+        the only supported protocol is 2 or `pickle.HIGHEST_PROTOCOL`.
+        Specifying a negative protocol version selects the highest
+        protocol version supported.  The higher the protocol used, the
+        more recent the version of Python needed to read the pickle
+        produced.
+
+        The optional argument serializeableModules must be an iterable 
+        collection of modules and strings. If the pickler needs to serialize
+        a module, it checks this collection to decide, if the module needs to 
+        be pickled by value or by name. The module gets pickled by value, 
+        if at least one of the following conditions is true. Otherwise it 
+        gets pickled by reference:
+        
+        * The module object is contained in serializeableModules.
+        * The the name of the module starts with a string contained 
+          in serializeableModules.
+        * The module has an attribute `__file__` and module contains 
+          a string, that is a substring of `__file__` after applying 
+          a path and case normalization as appropriate for the 
+          current system. 
+
+        .. note::
+        
+            In order to be able to unpickle a module pickled by name, 
+            the module must be importable. If this is not the case or if 
+            the content of the module might change, you should tell the pickler 
+            to pickle the module by value.
+        
         """
         if protocol < 0:
             protocol = pickle.HIGHEST_PROTOCOL
@@ -325,8 +345,8 @@ class Pickler(pickle.Pickler):
                     break
                 else:
                     f = getattr(obj, "__file__", None)
-                    if f and os.path.normcase(os.path.normpath(f)).find(
-                        os.path.normcase(os.path.normpath(item))) != -1:
+                    if ( f and 
+                         os.path.normcase(os.path.normpath(item)) in os.path.normcase(os.path.normpath(f)) ):
                         break
         else:
             return False
@@ -779,29 +799,81 @@ class Pickler(pickle.Pickler):
 class SPickleTools(object):
     """A collection of simple utility methods.
     
-    Warning: this API is still in development. Don't rely on this 
-    methods. If you need a stable API use the Pickler class directly 
-    or copy the code.
+    .. warning::
+       This class is still under development. Don't rely on its 
+       methods. If you need a stable API use the class :class:`Pickler` directly 
+       or copy the code.
+       
     """
     
     def __init__(self, serializeableModules=None):
+        """
+        The optional argument serializeableModules is passed 
+        on to the class :class:`Pickler`.
+        """
         if serializeableModules is None:
             serializeableModules = []
         self.serializeableModules = serializeableModules
         
-    def dumps(self, obj, persistent_id = None):
+    def dumps(self, obj, persistent_id = None, doCompress=True):
+        """Pickle an object and return the pickle
+        
+        This method works similar to the regular dumps method, but
+        also optimizes and optionally compresses the pickle.
+        
+        :param object obj: object to be pickled
+        :param persistent_id: the persistent_id function for the pickler.
+                              See the section "Pickling and unpickling external objects" of the 
+                              documentation of module :mod:`Pickle`.
+        :param doCompress: If doCompress yields `True` in a boolean context, the 
+                           pickle will be compressed, if the compression actually 
+                           reduces the size of the pickle. The compression method depends
+                           on the exact value of doCompress. If doCompress is callable,
+                           it is called to perform the compression. doCompress
+                           must be a function (or method), that takes a single string parameter
+                           and returns a compressed version. Otherwise, if doCompress is not
+                           callable the function :func:`bz2.compress` is used.
+        :return: the pickle, optionally compressed
+        :rtype: :class:`str`
+        """
         l = []
         pickler = Pickler(l, 2, serializeableModules=self.serializeableModules)
         if persistent_id is not None:
             pickler.persistent_id = persistent_id
         pickler.dump(obj)
         p = pickletools.optimize("".join(l))
-        c = compress(p)
-        if len(c) < len(p):
-            return c
+        if doCompress:
+            if callable(doCompress):
+                c = doCompress(p)
+            else:
+                # use the bz2 compression
+                c = compress(p)
+            if len(c) < len(p):
+                return c
         return p
         
     def dumps_with_external_ids(self, obj, idmap, matchResources=False, matchNetref=False):
+        """
+        Pickle an object, that references objects that can't be pickled.
+        
+        If you want to pickle an object, that references a resource (files,
+        sockets, etc) or references a RPyC-proxy for an object on a remote system
+        you can't pickle the referenced object. But if you are going to transfer
+        the pickle to a remote system using the package RPyC, you can replace the 
+        resources by an RPyC proxy objects and replace RPyC proxy objects by the 
+        real objects. 
+        
+        This method creates an :class:`Pickler` object with a `persistent_id` method
+        that optionally replaces resources and proxy objects by their object id. It stores 
+        the mapping between ids and objects in the idmap dictionary (or any other mutable mapping).
+        
+        :param object obj: the object to be pickled
+        :param idmap: receives the id to object mapping
+        :type idmap: :class:`dict`
+        :param object matchResources: if true in a boolean context, replace resource objects. 
+        :param object matchNetref: if true in a boolean context, replace RPyC proxies (technically 
+                            objects of class :class:`rpyc.core.netref.BaseNetref`).
+        """
         def persistent_id(obj):
             oid = id(obj)
             if oid in idmap:
@@ -825,6 +897,19 @@ class SPickleTools(object):
     
     @classmethod
     def loads_with_external_ids(cls, str, idmap):
+        """
+        Unpickle an object from a string.
+        
+        Replace ids for external objects with 
+        the objects provided in idmap.
+        
+        :param str: the pickle
+        :type str: :class:`str`
+        :param idmap: the mapping, that contains the objects for the id values used in the pickle
+        :type idmap: dict
+        :return: the reconstructed object
+        :rtype: object
+        """ 
         def persistent_load(oid):
             try:
                 return idmap[oid]
@@ -834,6 +919,21 @@ class SPickleTools(object):
     
     @classmethod
     def loads(cls, str, persistent_load=None, useCPickle=True):
+        """
+        Unpickle an object from a string.
+
+        :param str: the pickle
+        :type str: :class:`str`
+        :param persistent_load: The `persistent_load` method for the 
+                                unpickler.  
+                                See the section "Pickling and unpickling external objects" of the 
+                                documentation of module :mod:`Pickle`.
+        :param object useCPickle: if True in a boolean context, use the Unpickler from the 
+                           module :mod:`cPickle`. Otherwise use the much slower Unpickler from 
+                           the module :mod:`pickle`.
+        :return: the reconstructed object
+        :rtype: object        
+        """
         if str.startswith("BZh9"):
             str = decompress(str)
         file = StringIO(str)
@@ -845,14 +945,21 @@ class SPickleTools(object):
 
     @classmethod
     def dis(cls, str, out=None, memo=None, indentlevel=4):
+        """
+        Disassemble an optionally compressed pickle.
+        
+        See function :func:`pickletools.dis` for details.
+        """
         if str.startswith("BZh9"):
             str = decompress(str)
         pickletools.dis(str, out, memo, indentlevel)
         
     @classmethod
     def getImportList(cls, str):   
-        """returns a list containing all imported modules from the pickled 
-        data.
+        """
+        Return a list containing all imported modules from the pickle `str`.
+        
+        Somtimes useful for debuging.
         """
         if str.startswith("BZh9"):
             str = decompress(str)
@@ -864,6 +971,21 @@ class SPickleTools(object):
         return importModules        
           
     def remotemethod(self, rpycconnection, method):
+        """Create a remote method.
+        
+        This method takes an active RPyC connection and 
+        a locally defined method (or function) and returns 
+        a proxy for an equivalent function on the remote side.
+        If you invoke the proxy, it will create a pickle containing the 
+        method and its parameter, transfer this pickle to the remote side, 
+        unpickle it and invoke the method. It then pickles the result 
+        and transfers the result back to the local side.
+        
+        :param rpycconnection: an active RPyC connection
+        :type rpycconnection: :class:`rpyc.core.protocol.Connection`
+        :param object method: a callable object
+        :return: the proxy for method
+        """
         def wrapper(*args, **keywords):
             rmethod = self._build_remotemethod(rpycconnection, method)
             r0, r1 = rmethod(*args, **keywords)
@@ -898,16 +1020,20 @@ class SPickleTools(object):
 
     @classmethod
     def module_for_globals(cls, callable_or_moduledict, withDefiningModules=False):
-        """Get the module associated with a callable or a module dictionary.
+        """
+        Get the module associated with a callable or a module dictionary.
 
         If you pickle a module, make sure to keep a reference to unpickled module.
-        Otherwise the __del__-method of the module will clear the modules 
+        Otherwise the destruction of the module will clear the modules 
         dictionary. Usually, the sPickle code for serializing modules, preserves 
         a reference to modules created from a pickle but not imported into 
         sys.modules. However, there might be cases, where you need to identify 
         relevant modules yourself. This method can be used, to find the relevant module(s).
 
-        Return value: None, or a module or a set of modules
+        :param callable_or_moduledict: a function or a method or a module dictionary
+        :param object withDefiningModules: if True and callable_or_moduledict is a callable, 
+                                           return also the module defining the callable.
+        :return: `None`, or a single module or a set of modules
         """
         g = None
         modules = []
@@ -930,7 +1056,7 @@ class SPickleTools(object):
                         pass
             if inspect.isfunction(func):
                 g = func.func_globals
-        for i, v in enumerate(modules):
+        for v in modules:
             if v:
                 m = sys.modules.get(v)
                 if m is not None:
@@ -950,10 +1076,10 @@ class StacklessTaskletReturnValueException(BaseException):
     """This exception can be used to return a value from a Stackless Python tasklet.
     
     Usually a tasklet has no way to return a value at the end of its live. But it can 
-    raise an exception. Therefore we use this exception to encapsulate a return value.
-    
-    Because this exception is not a real error and we do not want this exception 
-    to be caught, we derive it from BaseException instead of Exception.
+    raise an exception. You can use this exception to encapsulate a return value.
+    Because this exception is not a real error and you usually do not want 
+    to catch this exception in normal "error" handling, it 
+    is derived from :exc:`BaseException` instead of :exc:`Exception`.
     """
     def __init__(self, value):
         self.value = value
