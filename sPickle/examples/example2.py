@@ -96,7 +96,7 @@ def doit(connection):
     # Pickle function, transfer it to the remote side, unpickle 
     # it on the remote side and return a proxy to the remote function.
     # Transfer the return value as Pickle
-    remote_function = pt.remotemethod(connection, function)
+    remote_function = pt.remotemethod(connection, function, create_only_once=True)
     
     # Lets perform a few computations
     r = remote_function(22, 20)

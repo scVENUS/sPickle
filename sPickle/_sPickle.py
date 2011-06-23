@@ -28,8 +28,8 @@ import operator
 import functools
 import inspect
 
-saved_dispatch = pickle.Pickler.dispatch.copy()
-saved_dispatch_table = pickle.dispatch_table.copy()
+#saved_dispatch = pickle.Pickler.dispatch.copy()
+#saved_dispatch_table = pickle.dispatch_table.copy()
 
 import types
 try:
@@ -970,7 +970,27 @@ class SPickleTools(object):
                 importModules.append(opcodes[1])
         return importModules        
           
-    def remotemethod(self, rpycconnection, method):
+    CREATE_IMMEDIATELY = 'immedately'
+    """
+    Constant to be given to the `create_only_once` argument of method :meth:`remotemethod`. 
+    Create the method on the remote side during the invocation of :meth:`remotemethod`.
+    """
+
+    CREATE_LAZY = True
+    """
+    Constant to be given to the `create_only_once` argument of method :meth:`remotemethod`. 
+    Create the method on the remote side on the first invocation of the function returned by :meth:`remotemethod`.
+    The actual value is `True`.
+    """
+
+    CREATE_EVERYTIME = False
+    """
+    Constant to be given to the `create_only_once` argument of method :meth:`remotemethod`. 
+    Create the method on the remote side on every invocation of the function returned by :meth:`remotemethod`.
+    The actual value is `False`.
+    """
+
+    def remotemethod(self, rpycconnection, method, create_only_once=None):
         """Create a remote method.
         
         This method takes an active RPyC connection and 
@@ -984,10 +1004,29 @@ class SPickleTools(object):
         :param rpycconnection: an active RPyC connection
         :type rpycconnection: :class:`rpyc.core.protocol.Connection`
         :param object method: a callable object
+        :param create_only_once: controlls the creation of the method on the 
+            remote side. If you want to create the method during the execution 
+            of :meth:`remotemethod`, pass :attr:`CREATE_IMMEDIATELY`. Otherwise,
+            if the value of create_only_once is `True` in a boolean context, 
+            create the remote method on its first invokation. Otherwise, 
+            if create_only_once evaluates to `False`, create the remote 
+            method on every invocation.
+
         :return: the proxy for method
         """
+        if create_only_once == self.CREATE_IMMEDIATELY:
+            rmethod_list = (self._build_remotemethod(rpycconnection, method),)
+        else:
+            rmethod_list = [bool(create_only_once)]
+
         def wrapper(*args, **keywords):
-            rmethod = self._build_remotemethod(rpycconnection, method)
+            if callable(rmethod_list[0]):
+                rmethod = rmethod_list[0]
+            else:
+                rmethod = self._build_remotemethod(rpycconnection, method)
+                if rmethod_list[0] is True:
+                    rmethod_list[0] = rmethod
+
             r0, r1 = rmethod(*args, **keywords)
             if r0 is None:
                 return r1
@@ -996,14 +1035,21 @@ class SPickleTools(object):
             return self.loads_with_external_ids(r0, idmap)
         functools.update_wrapper(wrapper, method)
         return wrapper
-
                 
     def _build_remotemethod(self, rpycconnection, method):
         """return a remote method"""
         idmap = {}
         pickle = self.dumps_with_external_ids(method, idmap, matchResources=True)
-        rcls = rpycconnection.root.getmodule(self.__class__.__module__)
-        rcls = getattr(rcls, self.__class__.__name__)
+        try:
+            rcls = rpycconnection.root.getmodule(self.__class__.__module__)
+            rcls = getattr(rcls, self.__class__.__name__)
+        except ImportError, e:
+            LOGGER().debug("Remote side lacks the module, going to pickle it")
+            import sPickle._sPickle
+            pt = SPickleTools(serializeableModules=[sPickle, sPickle._sPickle])
+            # no compression to be compatible with the plain unpickler
+            rcls_pickled = pt.dumps((sPickle, self.__class__), doCompress=False)
+            rcls = rpycconnection.root.getmodule("cPickle").loads(rcls_pickled)[1]
         remotemethod = rcls()._build_remotemethod_remote(pickle, idmap)
         return remotemethod
     
