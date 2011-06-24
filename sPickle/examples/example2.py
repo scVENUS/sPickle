@@ -65,16 +65,6 @@ class ComputeTheAnswer(object):
         
 
 def doit(connection):
-    root = connection.root
-    rsys = root.getmodule("sys")
-    rsys.stdout = sys.stdout
-    
-    # We need the sPickle module on the remote side too. 
-    # To simplify the development, we add the current sPickle directory 
-    # This works fine, if the remote host is "localhost" and does not 
-    # hurt otherwise.
-    rsys.path.append(os.path.dirname(os.path.dirname(sPickle.__file__)))
-    #connection.execute("import sys; print 'Remote sys.path: %r' % sys.path")
 
     # the directory sPickle/examples is not in sys.path, therefore
     # it is not possible to import modules from this directory. 
@@ -84,7 +74,9 @@ def doit(connection):
     # This function encapsulates the operations to be performed on the 
     # remote side.
     remoteLogger = logging.getLogger("remoteLogger")
-    def function(param1, param2):
+    
+    @pt.remotemethod(connection, create_only_once=True)
+    def remote_function(param1, param2):
         remoteLogger.info("Running on Host %r, PID %d", socket.gethostname(), os.getpid())
         remoteLogger.info("Starting function with parameters: %r, %r", param1, param2)
         algorithm = ComputeTheAnswer(param1, param2)
@@ -93,11 +85,6 @@ def doit(connection):
         remoteLogger.info("Computing is done.")
         return algorithm.getResult()
 
-    # Pickle function, transfer it to the remote side, unpickle 
-    # it on the remote side and return a proxy to the remote function.
-    # Transfer the return value as Pickle
-    remote_function = pt.remotemethod(connection, function, create_only_once=True)
-    
     # Lets perform a few computations
     r = remote_function(22, 20)
     print "Result: ", r
@@ -124,8 +111,10 @@ def main(argv):
     password = None  # I'm using an ssh agent
     
     connection = rpyc_over_paramiko.newRPyCConnectionOverParamiko(argv, host, username, password)
+    connection.root.getmodule("sys").stdout = sys.stdout  # redirect remote stdout to our local stdout
     try:
-        doit(connection)
+        doit(None)         # local execution
+        doit(connection)   # remote execution
     finally:
         connection.close()
     

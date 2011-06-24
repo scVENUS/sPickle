@@ -973,53 +973,73 @@ class SPickleTools(object):
     CREATE_IMMEDIATELY = 'immedately'
     """
     Constant to be given to the `create_only_once` argument of method :meth:`remotemethod`. 
-    Create the method on the remote side during the invocation of :meth:`remotemethod`.
+    Create the function on the remote side during the invocation of :meth:`remotemethod`.
     """
 
     CREATE_LAZY = True
     """
     Constant to be given to the `create_only_once` argument of method :meth:`remotemethod`. 
-    Create the method on the remote side on the first invocation of the function returned by :meth:`remotemethod`.
+    Create the function on the remote side on the first invocation of the function returned by :meth:`remotemethod`.
     The actual value is `True`.
     """
 
     CREATE_EVERYTIME = False
     """
     Constant to be given to the `create_only_once` argument of method :meth:`remotemethod`. 
-    Create the method on the remote side on every invocation of the function returned by :meth:`remotemethod`.
+    Create the function on the remote side on every invocation of the function returned by :meth:`remotemethod`.
     The actual value is `False`.
     """
 
-    def remotemethod(self, rpycconnection, method, create_only_once=None):
-        """Create a remote method.
+    def remotemethod(self, rpycconnection, method=None, create_only_once=None):
+        """Create a remote function.
         
         This method takes an active RPyC connection and 
-        a locally defined method (or function) and returns 
+        a locally defined function (or method) and returns 
         a proxy for an equivalent function on the remote side.
         If you invoke the proxy, it will create a pickle containing the 
-        method and its parameter, transfer this pickle to the remote side, 
-        unpickle it and invoke the method. It then pickles the result 
-        and transfers the result back to the local side.
+        function, transfer this pickle to the remote side, 
+        unpickle it and invoke the function. It then pickles the result 
+        and transfers the result back to the local side. It will not pickle the 
+        function arguments. If you need to transfer the function arguments by 
+        value, use :func:`functools.partial` to apply them to your 
+        function prior to the call of remotemethod.
         
-        :param rpycconnection: an active RPyC connection
+        :param rpycconnection: an active RPyC connection. If set to `None`, execute
+                               method localy.
         :type rpycconnection: :class:`rpyc.core.protocol.Connection`
-        :param object method: a callable object
-        :param create_only_once: controlls the creation of the method on the 
-            remote side. If you want to create the method during the execution 
+        :param object method: a callable object. If you do not give this argument, 
+            you can use remotemethod as a decorator.
+        :param create_only_once: controlls the creation of the function on the 
+            remote side. If you want to create the function during the execution 
             of :meth:`remotemethod`, pass :attr:`CREATE_IMMEDIATELY`. Otherwise,
-            if the value of create_only_once is `True` in a boolean context, 
-            create the remote method on its first invokation. Otherwise, 
-            if create_only_once evaluates to `False`, create the remote 
-            method on every invocation.
+            if you want to create the remote function on its first invokation,
+            set create_only_once to a value that is `True` in a boolean context.
+            Otherwise, if you set create_only_once evaluates to `False`, 
+            the local proxy creates the create the remote 
+            function on every invocation.
 
-        :return: the proxy for method
+        :return: the proxy for the remote function
+        
+        .. note::
+           If you use `remotemethod` as a decorator, do not apply it on regular
+           methods of a class. It does not work in the desired way, because decorators 
+           work on the underlying function object, not on the method object. Therefore 
+           you will end up with a remote function, that recives a RPyC proxy for `self`.
+           
         """
+        if method is None:
+            return functools.partial(self.remotemethod, rpycconnection, create_only_once=create_only_once)
+
         if create_only_once == self.CREATE_IMMEDIATELY:
             rmethod_list = (self._build_remotemethod(rpycconnection, method),)
         else:
             rmethod_list = [bool(create_only_once)]
 
         def wrapper(*args, **keywords):
+            if rpycconnection is None:
+                # the local case.
+                return method(*args, **keywords)
+
             if callable(rmethod_list[0]):
                 rmethod = rmethod_list[0]
             else:
