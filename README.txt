@@ -70,11 +70,13 @@ Plan
 ====
 
 * Move the source code repository to github
-* Add more documentation
-* Use sphinx
 
 Changes
 =======
+
+Version 0.0.6
+-------------
+Improved the documentation and improved the method SPickleTools.remotemethod.
 
 Version 0.0.5
 -------------
