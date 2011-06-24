@@ -1141,7 +1141,7 @@ class SPickleTools(object):
 class StacklessTaskletReturnValueException(BaseException):
     """This exception can be used to return a value from a Stackless Python tasklet.
     
-    Usually a tasklet has no way to return a value at the end of its live. But it can 
+    Usually a tasklet has no documented way to return a value at the end of its live. But it can 
     raise an exception. You can use this exception to encapsulate a return value.
     Because this exception is not a real error and you usually do not want 
     to catch this exception in normal "error" handling, it 

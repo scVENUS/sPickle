@@ -25,7 +25,7 @@ The module sPickle is an enhanced version of the standard pickle module of
 Stackless Python. It provides an improved :class:`Pickler` class and a 
 utility class :class:`SPickleTools`.
 
-The sPickle pachahe tries to push the limits for pickling. The implementation
+The sPickle package tries to push the limits for pickling. The implementation
 tries to create correct pickles, but it does not try to be efficient or portable or
 nice to read or ... Consider it a proof of concept, a demonstration, that shows 
 what could be done.
