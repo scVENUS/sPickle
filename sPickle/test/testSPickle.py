@@ -36,6 +36,10 @@ import socket
 import collections
 import logging
 import operator
+try:
+    import gtk
+except ImportError:
+    gtk = None
 
 logging.basicConfig(level=logging.INFO)
 
@@ -350,6 +354,14 @@ class PickelingTest(TestCase):
     # - Contains the pickle the module content or just an import instruction?
     # - How is sys.modules changed on unpickling?
     # - Is the content of the modules equal?
+ 
+#    # the function used to import a module   
+#    def testImport(self):
+#        orig = _sPickle.import_module
+#        p = self.dumpWithPreobjects(None, orig, dis=False)
+#        obj = self.pickler.loads(p)[-1]
+#        self.assertIsNot(obj, orig)
+#        self.assertDictEqual(orig.func_globals, obj.func_globals)
     
     def testModule(self):
         orig = tabnanny
@@ -407,6 +419,10 @@ class PickelingTest(TestCase):
         obj, tif = self.wfModuleTest(anonymousWfModule, anonymousWfModule.__dict__)
         self.assertFalse(obj.__name__ in tif.post_modules)
 
+    @skipIf(gtk is None, "gtk not available")
+    def testGtk(self):
+        # the pure stackless pickler fails to import gtk
+        self.moduleTest(gtk, dis=True)
 
     def moduleTest(self, module, preObjects=None, **kw):
         orig = module
