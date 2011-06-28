@@ -422,7 +422,7 @@ class PickelingTest(TestCase):
     @skipIf(gtk is None, "gtk not available")
     def testGtk(self):
         # the pure stackless pickler fails to import gtk
-        self.moduleTest(gtk, dis=True)
+        self.moduleTest(gtk, dis=False)
 
     def moduleTest(self, module, preObjects=None, **kw):
         orig = module

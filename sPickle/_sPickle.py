@@ -100,7 +100,7 @@ else:
 
 
 #
-# The next 7 functions are used to unpickle modules
+# The next 8 functions are used to unpickle various types
 #
 def create_module(cls, name, doc=None):
     """create and imports a module.
@@ -152,6 +152,13 @@ def restore_modules_entry(doDel, old, new, preserveReferenceToNew=True):
         release_lock()
     return new
 
+#def import_module(name):
+#    global sys
+#    if sys is None:
+#        sys = __import__('sys')
+#    __import__(name)
+#    return sys.modules[name]
+
 def create_thread_lock(locked):
     """recreate a lock object"""
     l = thread.allocate_lock()
@@ -198,6 +205,7 @@ if True:
                       'socket': socket,
                       '__builtins__': __builtins__}   
     __func = type(create_module)
+#    import_module=__func(import_module.func_code, {'sys': None, '__import__': __import__}, 'import_module_')
     create_module=__func(create_module.func_code, __GLOBALS_DICT, 'create_module_')
     save_modules_entry=__func(save_modules_entry.func_code, __GLOBALS_DICT, 'save_modules_entry_')
     restore_modules_entry=__func(restore_modules_entry.func_code, 
@@ -513,6 +521,10 @@ class Pickler(pickle.Pickler):
         return self.__class__.__bases__[0].memoize(self, obj)
         
     def save_dict(self, obj):
+        if obj is sys.modules:
+            self.write(pickle.GLOBAL + 'sys' + '\n' + 'modules' + '\n')
+            self.memoize(obj)
+            return
         self.dict_checkpoint(obj, self._save_dict_impl)
         
     def _save_dict_impl(self, obj):
@@ -672,14 +684,24 @@ class Pickler(pickle.Pickler):
         
         if not self.mustSerialize(obj):
             # help pickling unimported modules
-            if obj.__name__ not in sys.modules:
+            if obj is not sys.modules.get(obj.__name__):
+            # if obj.__name__ not in sys.modules:
                 try:
                     self.save_global(obj)
                     return True
                 except pickle.PicklingError:
-                    pass
-            # continue with the default procedure
-            return False  
+                    LOGGER().exception("Can't pickle anonymous module: %r", obj)
+                    raise
+                
+            # self.save_reduce(import_module, (obj.__name__,), obj=obj)
+            if __import__(obj.__name__) is obj:
+                self.save_reduce(__import__, (obj.__name__,), obj=obj)
+            else:
+                self.save_reduce(__import__, (obj.__name__,))
+                write(pickle.POP)
+                self.save_reduce(operator.getitem, (sys.modules, obj.__name__), obj=obj)
+            return True
+                
         # do it ourself
         
         # save the current implementation of the module
