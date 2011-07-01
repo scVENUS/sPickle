@@ -52,7 +52,9 @@ It supports pickling of modules and many resources the standard pickler can't
 cope with. 
 
 This version requires Python 2.7 or later. Unfortunately, there is currently no
-Python 3 version. 
+Python 3 version.
+
+Git repository: git://github.com/akruis/sPickle.git
 """,
     classifiers=[
           "License :: OSI Approved :: Apache Software License",

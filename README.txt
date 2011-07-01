@@ -25,7 +25,8 @@ Installation
 ------------
 
 Get easy_install and do "easy_install sPickle".
-
+Or get the latest source code from github.
+git clone git://github.com/akruis/sPickle.git
 
 Using sPickle
 -------------
@@ -68,11 +69,14 @@ a [dot] kruis [at] science-computing [dot] de
 
 Plan
 ====
-
-* Move the source code repository to github
+No further plans currently
 
 Changes
 =======
+
+Version 0.xxx
+-------------
+Minor fixes.
 
 Version 0.0.6
 -------------
