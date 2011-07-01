@@ -92,7 +92,8 @@ class _CheckpointSupport(object):
         """
         self._restoreTraceFunc()
         self._restoreTraceFunc = None
-            
+        sys.exc_clear()
+
         isCmdResult, trace, result = stackless.schedule(cmd)
         self._switchTraceFunc(trace)
 
