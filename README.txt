@@ -74,7 +74,7 @@ No further plans currently
 Changes
 =======
 
-Version 0.xxx
+Version 0.0.7
 -------------
 Minor fixes. Changed the logging to delay log messages while holding the 
 import lock. Otherwise you might get a dead-lock.
