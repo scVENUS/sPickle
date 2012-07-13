@@ -76,7 +76,8 @@ Changes
 
 Version 0.xxx
 -------------
-Minor fixes.
+Minor fixes. Changed the logging to delay log messages while holding the 
+import lock. Otherwise you might get a dead-lock.
 
 Version 0.0.6
 -------------

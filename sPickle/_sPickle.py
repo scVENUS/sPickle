@@ -22,6 +22,7 @@ import pickle
 import cPickle
 import pickletools
 import thread
+import threading
 import os.path
 import collections
 import operator
@@ -74,14 +75,60 @@ RANGEITERATOR_TYPE = type(EMPTY_RANGE_ITERATOR)
 
 EMPTY_SET_ITERATOR = iter(set())
 SETITERATOR_TYPE = type(EMPTY_SET_ITERATOR)
-__LOGGER = None
-def LOGGER():
-    global __LOGGER
-    if __LOGGER is None:
-        import logging
-        __LOGGER = logging.getLogger(__name__)
-    return __LOGGER
 
+class _DelayedLogger(object):
+    from imp import lock_held
+    
+    def __init__(self, name):
+        self.__logger = None
+        self.__name = name
+        self.__tl = threading.local()
+    
+    def __getLogger(self):
+        if self.__logger is None:
+            import logging
+            self.__logger = logging.getLogger(self.__name)
+        return self.__logger
+        
+    def __getQueue(self):
+        tl = self.__tl
+        try:
+            return tl.queue
+        except AttributeError:
+            tl.queue = collections.deque()
+        return tl.queue
+        
+    def __call__(self):
+        if self.lock_held():
+            return self
+        self.flush()
+        return self.__getLogger()
+    
+    def __getattr__(self, name):
+        f = functools.partial(self.__log, name)
+        setattr(self, name, f)
+        return f
+    
+    def __log(self, method, *args, **kw):
+        if method is not None:
+            queue = self.__getQueue()
+            queue.append((method, args, kw))
+        
+        if not self.lock_held():
+            queue = self.__getQueue()
+            while True:
+                try:
+                    nextCall = queue.popleft()
+                except IndexError:
+                    break
+                getattr(self.__getLogger(), nextCall[0])(*nextCall[1], **nextCall[2])
+                
+    def flush(self):
+        self.__log(None)
+
+LOGGER = _DelayedLogger(__name__)
+            
+            
 
 # types to be replaced by proxies, if possible  , 
 RESOURCE_TYPES = (file, socket.SocketType, SOCKET_PAIR_TYPE, socket._closedsocket,
@@ -717,6 +764,8 @@ class Pickler(pickle.Pickler):
             self.save_reduce(create_module, (type(obj), obj.__name__, getattr(obj, "__doc__", None)), obj.__dict__, obj=obj)
         finally:
             restore_modules_entry(True, savedModule, obj, preserveReferenceToNew=False)
+            # Flush log messages
+            LOGGER.flush()
             
         if doDel or not reload:
             write(pickle.TUPLE3+pickle.REDUCE)
