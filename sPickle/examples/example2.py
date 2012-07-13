@@ -35,7 +35,7 @@ import collections
 
 import sPickle
 
-import rpyc_over_paramiko
+import rpyc_over_ssh
 
 import logging
 LOGGER = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ def main(argv):
 
     """
     host = argv.pop(0) if argv else socket.getfqdn()
-    argv.extend(rpyc_over_paramiko.START_RPYC_CLASSIC_SERVER_ARGV[len(argv):])
+    argv.extend(rpyc_over_ssh.START_RPYC_CLASSIC_SERVER_ARGV[len(argv):])
     if '@' in host:
         username, host = host.split('@', 1)
     else:
@@ -110,7 +110,7 @@ def main(argv):
     print "Command line is: %r" % argv
     password = None  # I'm using an ssh agent
     
-    connection = rpyc_over_paramiko.newRPyCConnectionOverParamiko(argv, host, username, password)
+    connection = rpyc_over_ssh.newRPyCConnectionOverSsh(argv, host, username, password)
     connection.root.getmodule("sys").stdout = sys.stdout  # redirect remote stdout to our local stdout
     try:
         doit(None)         # local execution

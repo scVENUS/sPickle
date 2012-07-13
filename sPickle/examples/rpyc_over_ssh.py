@@ -18,10 +18,10 @@
 
 """
 This module contains a few functions and classes, that help
-you the build RPyC connections using the paramiko ssh client.
+you the build RPyC connections using the ssh client (former paramiko client).
 
 Unfortunately this code is not completely documented. See the 
-documentation of paramiko and RPyC for details.
+documentation of ssh and RPyC for details.
 """
 
 from __future__ import absolute_import
@@ -33,25 +33,25 @@ import socket
 import collections
 
 import rpyc
-from rpyc.utils.classic import SERVER_FILE
-import paramiko
+SERVER_FILE = os.environ.get("RPYC_SERVER_FILE", os.path.join(os.path.dirname(rpyc.__file__), "scripts", "rpyc_classic.py"))
+import ssh
 import logging
 LOGGER = logging.getLogger(__name__)
 
-__all__ = ("newRPyCConnectionOverParamiko", "argv2command", "START_RPYC_CLASSIC_SERVER_ARGV")
+__all__ = ("newRPyCConnectionOverSsh", "argv2command", "START_RPYC_CLASSIC_SERVER_ARGV")
 
 START_RPYC_CLASSIC_SERVER_ARGV = [ os.path.abspath(sys.executable), SERVER_FILE, '-m', 'stdio', '-q' ]
 
-class ParamikoRpycStream(rpyc.SocketStream):
+class SshRpycStream(rpyc.SocketStream):
     def __init__(self, sock):
         if not isinstance(sock, RpycParamicoChannel):
             # That's an evil hack. We modify the class of sock
             sock.__class__ = RpycParamicoChannel
             sock.__dict__['_stdoutPipe'] = None
-        super(ParamikoRpycStream, self).__init__(sock)
+        super(SshRpycStream, self).__init__(sock)
 
     
-class RpycParamicoChannel(paramiko.Channel):
+class RpycParamicoChannel(ssh.Channel):
     def __init__(self, *args, **kw):
         self._stdoutPipe = None
         super(RpycParamicoChannel, self).__init__(*args, **kw)
@@ -79,7 +79,7 @@ class RpycParamicoChannel(paramiko.Channel):
             if self._stdoutPipe is not None: 
                 return self._stdoutPipe.fileno() 
             # create the pipe and feed in any existing data 
-            self._stdoutPipe = paramiko.pipe.make_pipe()
+            self._stdoutPipe = ssh.pipe.make_pipe()
             self.in_buffer.set_event(self._stdoutPipe)
             return self._stdoutPipe.fileno() 
         finally: 
@@ -89,10 +89,10 @@ class RpycParamicoChannel(paramiko.Channel):
         return self.filenoStdout()
    
 
-def newRPyCConnectionOverParamiko(command, host, username, password):
-    """get a RPyC connection to a given host via paramiko
+def newRPyCConnectionOverSsh(command, host, username, password):
+    """get a RPyC connection to a given host via ssh
     
-    Open a paramiko ssh connection to the given host and 
+    Open a ssh connection to the given host and 
     run command. Command must start a RPyC server, that 
     is connected to its stdio. Usually command will look
     similar to::
@@ -107,12 +107,12 @@ def newRPyCConnectionOverParamiko(command, host, username, password):
         # convert the argv string vector to a single string 
         command = argv2command(command)
     
-    client = paramiko.SSHClient()
+    client = ssh.SSHClient()
     client.load_system_host_keys()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(ssh.AutoAddPolicy())
     client.connect(host, username=username, password=password) # there are more authentication options
     transport = client.get_transport()
-    transport.setName("paramiko.Transport for rpyc stream")
+    transport.setName("ssh.Transport for rpyc stream")
     channel = transport.open_session()
     channel.exec_command(command)
     
@@ -125,9 +125,9 @@ def newRPyCConnectionOverParamiko(command, host, username, password):
                       name="Stderr copy for %s" % (channel.get_name(),))
     stderrThread.daemon = False # keep the interpreter alive until this thread is done
     stderrThread.start()
-    prs = ParamikoRpycStream(channel)
+    prs = SshRpycStream(channel)
     # keep the ssh-client alive. This is very important, otherwise the connection will shutdown
-    prs.paramikoSshClient = client
+    prs._sshClient = client
     c = rpyc.connect_stream(prs, rpyc.SlaveService)
     return c
 
@@ -183,7 +183,7 @@ def _hello_world(argv):
     password = None  # I'm using an ssh agent
     
     
-    connection = newRPyCConnectionOverParamiko(argv, host, username, password)
+    connection = newRPyCConnectionOverSsh(argv, host, username, password)
     try:
         root = connection.root         # get the remote root object
         rsys = root.getmodule("sys")   # get the remote sys module

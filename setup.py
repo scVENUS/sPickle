@@ -69,8 +69,8 @@ Git repository: git://github.com/akruis/sPickle.git
       keywords='pickling sPickle pickle stackless',
       license='Apache Software License',
       install_requires=[
-        'RPyC>=3.1.0',
-        'paramiko>=1.7.6'
+        'RPyC>=3.2.2',
+        'ssh>=1.7.14'
       ],
       platforms="any",
       test_suite="sPickle"

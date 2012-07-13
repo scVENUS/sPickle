@@ -78,6 +78,8 @@ Version 0.xxx
 -------------
 Minor fixes. Changed the logging to delay log messages while holding the 
 import lock. Otherwise you might get a dead-lock.
+Upgrade the Python extensions used by the examples and switched from 
+Paramiko to ssh.
 
 Version 0.0.6
 -------------
