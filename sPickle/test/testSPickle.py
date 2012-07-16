@@ -154,6 +154,40 @@ class P:
             return True
     RecursiveClass.selfCls = RecursiveClass
 
+class Q(object):
+    # this class is not in the module namespace and 
+    # therefore the pickler has to serialize the class
+    class IndirectRecursiveBaseClass(object):
+        pass
+    
+    class IndirectRecursiveClass(IndirectRecursiveBaseClass):
+        count = 0
+        def __init__(self):
+            self.count = self.count + 1 
+        
+        def run(self, test):
+            test.assertIsInstance(self.refToGlobals, types.DictProxyType)
+            test.assertEqual(self.refToGlobals, Q.__dict__)
+            test.assertEqual(self.count, 1)
+            return True
+Q.IndirectRecursiveBaseClass.refToGlobals = Q.__dict__
+
+class R:
+    # this class is not in the module namespace and 
+    # therefore the pickler has to serialize the class
+    class IndirectRecursiveBaseClass(object):
+        pass
+    
+    class IndirectRecursiveClass(IndirectRecursiveBaseClass):
+        count = 0
+        def __init__(self):
+            self.count = self.count + 1 
+        
+        def run(self, test):
+            test.assertTrue(self.refToDict['ref2IndirectRecursiveClass'] is self.__class__)
+            test.assertEqual(self.count, 1)
+            return True
+R.IndirectRecursiveBaseClass.refToDict = { 'ref2IndirectRecursiveClass' : R.IndirectRecursiveClass }
 
 def buildModule(name):
     """Builder for anonymous modules"""
@@ -812,6 +846,21 @@ class PickelingTest(TestCase):
         lobj.extend(obj)
         self.assertListEqual(lobj, lorig)
         
+    def testDictProxy(self):
+        dp = PlainClass.__dict__
+        self.assertIsInstance(dp, types.DictProxyType)
+        p = self.dumpWithPreobjects(None, dp)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsInstance(obj, types.DictProxyType)
+        self.assertEqual(dp, obj)
+
+    def testDictProxyNotClassDict(self):
+        class C(object):
+            __slots__ = ()
+        dp = C.__dict__
+        self.assertIsInstance(dp, types.DictProxyType)
+        self.assertRaises(pickle.PicklingError, self.pickler.dumps, dp)
+        
     # Tests for pickling classes
     
     def testClassicClass(self):
@@ -840,6 +889,14 @@ class PickelingTest(TestCase):
         cls = self.classCopyTest(P.RecursiveClass)
         cls().run(self)
         
+    def testIndirectRecursiveClass(self):
+        cls = self.classCopyTest(Q.IndirectRecursiveClass)
+        cls().run(self)
+
+    def testIndirectRecursiveClass2(self):
+        cls = self.classCopyTest(R.IndirectRecursiveClass)
+        cls().run(self)
+        
     def testNormalClass(self):
         cls = self.classCopyTest(pickle.Pickler)
         self.assertTrue(cls is pickle.Pickler)
@@ -856,13 +913,16 @@ class PickelingTest(TestCase):
             attribute = "attribute value"
         self.classCopyTest(TestException, dis=False)
 
-    def classCopyTest(self, origCls, dis=False):
-        p = self.dumpWithPreobjects(None,origCls, dis=dis)
-        cls = self.pickler.loads(p)[-1]
+    def assertClassEquals(self, origCls, cls, level=0):
+        if origCls is cls:
+            return
+        self.assertLess(level, 10, "Possible recursion detected")
         self.assertTrue(type(cls) is type(origCls))
         self.assertEqual(cls.__name__, origCls.__name__)
         self.assertEqual(cls.__module__, origCls.__module__)
-        self.assertEqual(cls.__bases__, origCls.__bases__)
+        self.assertEqual(len(cls.__bases__), len(origCls.__bases__))
+        for b1, b2 in zip(cls.__bases__, origCls.__bases__):
+            self.assertClassEquals(b1, b2, level+1)
         self.assertEqual(set(dir(cls)), set(dir(origCls)))
         for k in dir(cls):
             if k in ('__dict__', '__subclasshook__', '__weakref__'):
@@ -873,6 +933,11 @@ class PickelingTest(TestCase):
             if " at 0x" not in repr(v2):
                 self.assertEqual(repr(v1), repr(v2), "key: %r repr: %r != %r" % (k, v1, v2))
             self.assertEqual(getattr(v1,"__name__", "Object has no Name"), getattr(v2,"__name__", "Object has no Name"))
+
+    def classCopyTest(self, origCls, dis=False):
+        p = self.dumpWithPreobjects(None,origCls, dis=dis)
+        cls = self.pickler.loads(p)[-1]
+        self.assertClassEquals(origCls, cls)
         return cls
         
     # Import tests

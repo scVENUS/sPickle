@@ -384,10 +384,15 @@ class Pickler(pickle.Pickler):
         self.dispatch[property] = self.saveProperty.__func__
         self.dispatch[operator.itemgetter] = self.saveOperatorItemgetter.__func__
         self.dispatch[operator.attrgetter] = self.saveOperatorAttrgetter.__func__
-                # initiallize the module_dict_ids module dict lookup table
+        self.dispatch[types.DictProxyType] = self.saveDictProxy.__func__
+
+        # initiallize the module_dict_ids module dict lookup table
         # this stackless specific call creates the dict self.module_dict_ids
         self._pickle_moduledict(self, {})
         self.object_dict_ids = {}
+        
+        # Used for class creation
+        self.delayedClassSetAttrList = []
         
     def mustSerialize(self, obj):
         """test, if a module must be serialised"""
@@ -536,7 +541,7 @@ class Pickler(pickle.Pickler):
         if obj is EMPTY_SET_ITERATOR:
             return self.save_reduce(iter, (set(),), obj=obj)
                                 
-        # handle __new__ anbd similar methods of built-in types        
+        # handle __new__ and similar methods of built-in types        
         if (isinstance(obj, type(object.__new__)) and 
             getattr(obj,"__name__", None) in ('__new__', '__subclasshook__')):
             return self.saveBuiltinNew(obj)
@@ -713,7 +718,19 @@ class Pickler(pickle.Pickler):
         return self.save_reduce(obj=obj, *rv)
 
     def saveClass(self, obj):
+        # create a class in 2 steps
+        # 1. recursively create the class with all bases, but without any attributes
+        #    Queue all attribute settings for later execution
+        # 2. Set all attributes for all classes
+        #
+        # Why? Because a base-class might reference its child via the global 
+        # namespace of its methods. And then we might get an assertion error 
+        # form self.memoize
+        #
         write = self.write
+        dcsal = self.delayedClassSetAttrList
+        isFirstClassCreation = not dcsal # test if list is empty
+        
         f = type(obj)
         name = obj.__name__
         d1 = {}; d2 = {}
@@ -721,13 +738,13 @@ class Pickler(pickle.Pickler):
             if k in ('__doc__', '__module__', '__slots__'):
                 d1[k] = v
                 continue
-            if type(v) in (types.DictProxyType, types.GetSetDescriptorType, types.MemberDescriptorType):
-                continue
             if k in ('__dict__', '__class__' ):
                 continue
+            if type(v) in (types.GetSetDescriptorType, types.MemberDescriptorType):
+                # todo: we could use v.__objclass__ and v.__name__
+                continue
             d2[k] = v
-        self.save_reduce(f,(name, obj.__bases__, d1), obj=obj)
-        
+
         # Use setattr to set the remaining class members. 
         # unfortunately, we can't use the state parameter of the 
         # save_reduce method (pickle BUILD-opcode), because BUILD 
@@ -737,8 +754,16 @@ class Pickler(pickle.Pickler):
         keys.sort()
         for k in keys:
             v = d2[k]
-            self.save_reduce(setattr, (obj, k, v))
-            write(pickle.POP)
+            dcsal.append((obj, k, v))
+
+        self.save_reduce(f,(name, obj.__bases__, d1), obj=obj)
+
+        if isFirstClassCreation:
+            for t in dcsal:
+                self.save_reduce(setattr, t)
+                write(pickle.POP)
+            del dcsal[:]
+
 
     def saveModule(self, obj, reload=False):
         write = self.write
@@ -882,6 +907,12 @@ class Pickler(pickle.Pickler):
         obj(probe)
         return self.save_reduce(type(obj), tuple(record), obj=obj)
     
+    def saveDictProxy(self, obj):
+        attr = obj.get("__dict__")
+        if isinstance(attr, types.GetSetDescriptorType) and attr.__name__ == "__dict__" and getattr(attr.__objclass__, "__dict__", None) == obj:
+            # probably a dict proxy of class attr.__objclass__
+            return self.save_reduce(getattr, (attr.__objclass__, '__dict__'), obj=obj)
+        raise pickle.PicklingError("Can't pickle %r: it is not the dict-proxy of a class dictionary" % (obj,))
     
     def _dumpSaveStack(self):
         from inspect import currentframe
