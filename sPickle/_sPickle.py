@@ -44,6 +44,11 @@ import socket
 import tempfile
 import codecs
 
+try:
+    _trace_memo_entries = [ int(i) for i in os.environ["SPICKLE_TRACE_MEMO_ENTRIES"].split() ]
+except Exception:
+    _trace_memo_entries = None
+
 SOCKET_PAIR_TYPE = None
 if hasattr(socket, "socketpair"):
     _sp = socket.socketpair()
@@ -468,6 +473,8 @@ class Pickler(pickle.Pickler):
 
     def save(self, obj):
         # Check for persistent id (defined by a subclass)
+        # set a magical variable for debugging
+        __object_to_be_pickled__ = obj
         pid = self.persistent_id(obj)
         if pid:
             self.save_pers(pid)
@@ -565,7 +572,16 @@ class Pickler(pickle.Pickler):
             LOGGER().error("Object already in memo! Id: %d, Obj: %r of type %r, Memo: %d=%r of type %r", 
                          id(obj), obj, type(obj), 
                          m[0], m[1], type(m[1]))
-        return self.__class__.__bases__[0].memoize(self, obj)
+            self._dumpSaveStack()
+        self.__class__.__bases__[0].memoize(self, obj)
+        if _trace_memo_entries:
+            i = id(obj)
+            m = self.memo.get(i)
+            if isinstance(m, tuple) and m[0] in _trace_memo_entries:
+                LOGGER().error("Traced object added to memo! Id: %d, Obj: %r of type %r, Memo: %d=%r of type %r", 
+                         id(obj), obj, type(obj), 
+                         m[0], m[1], type(m[1]))
+                self._dumpSaveStack()
         
     def save_dict(self, obj):
         if obj is sys.modules:
@@ -866,6 +882,42 @@ class Pickler(pickle.Pickler):
         obj(probe)
         return self.save_reduce(type(obj), tuple(record), obj=obj)
     
+    
+    def _dumpSaveStack(self):
+        from inspect import currentframe
+        from pprint import pformat
+        fr = currentframe()
+        obj = None
+        try:
+            while fr is not None:
+                try:
+                    obj = fr.f_locals['__object_to_be_pickled__']
+                except Exception:
+                    pass
+                else:
+                    try:
+                        s = pformat(obj, depth=3)
+                    except Exception:
+                        try:
+                            s = repr(obj)
+                        except Exception:
+                            s = "<NO REPRESENTATION AVAILABLE>"
+                    try:
+                        t = str(type(obj))
+                    except Exception:
+                        t = "<NO REPRESENTATION AVAILABLE>"
+                        
+                    i = id(obj)
+                    try:
+                        m = self.memo[i][0]
+                    except Exception:
+                        m = "n.a."
+                        
+                    LOGGER().info("Thing to be pickled id=%d, memo=%s, type=%s: %s" % (i, m, t, s))
+                fr = fr.f_back
+        finally:
+            del fr
+
         
 class SPickleTools(object):
     """A collection of simple utility methods.
