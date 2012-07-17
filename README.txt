@@ -74,7 +74,7 @@ No further plans currently
 Changes
 =======
 
-Version 0.xxx
+Version 0.0.8
 -------------
 2012-07-17
 Important bug fix: previous versions failed to pickle some classes.
