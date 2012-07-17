@@ -377,8 +377,10 @@ class Pickler(pickle.Pickler):
         self.dispatch[types.FileType] = self.saveFile.__func__
         self.dispatch[socket.SocketType] = self.saveSocket.__func__
         self.dispatch[SOCKET_PAIR_TYPE] = self.saveSocketPairSocket.__func__
-        self.dispatch[WRAPPER_DESCRIPTOR_TYPE] = self.saveWrapperOrMethodDescriptor.__func__
-        self.dispatch[METHOD_DESCRIPTOR_TYPE] = self.saveWrapperOrMethodDescriptor.__func__
+        self.dispatch[WRAPPER_DESCRIPTOR_TYPE] = self.saveDescriptorWithObjclass.__func__
+        self.dispatch[METHOD_DESCRIPTOR_TYPE] = self.saveDescriptorWithObjclass.__func__
+        self.dispatch[types.MemberDescriptorType] = self.saveDescriptorWithObjclass.__func__
+        self.dispatch[types.GetSetDescriptorType] = self.saveDescriptorWithObjclass.__func__
         self.dispatch[staticmethod] = self.saveStaticOrClassmethod.__func__
         self.dispatch[classmethod] = self.saveStaticOrClassmethod.__func__
         self.dispatch[property] = self.saveProperty.__func__
@@ -574,7 +576,7 @@ class Pickler(pickle.Pickler):
 
         if id(obj) in self.memo:
             m = self.memo[id(obj)]
-            LOGGER().error("Object already in memo! Id: %d, Obj: %r of type %r, Memo: %d=%r of type %r", 
+            LOGGER().error("Object already in memo! Id: %d, Obj: %r of type %r, Memo-key: %d=%r of type %r", 
                          id(obj), obj, type(obj), 
                          m[0], m[1], type(m[1]))
             self._dumpSaveStack()
@@ -583,7 +585,7 @@ class Pickler(pickle.Pickler):
             i = id(obj)
             m = self.memo.get(i)
             if isinstance(m, tuple) and m[0] in _trace_memo_entries:
-                LOGGER().error("Traced object added to memo! Id: %d, Obj: %r of type %r, Memo: %d=%r of type %r", 
+                LOGGER().error("Traced object added to memo! Id: %d, Obj: %r of type %r, Memo-key: %d=%r of type %r", 
                          id(obj), obj, type(obj), 
                          m[0], m[1], type(m[1]))
                 self._dumpSaveStack()
@@ -730,6 +732,9 @@ class Pickler(pickle.Pickler):
         write = self.write
         dcsal = self.delayedClassSetAttrList
         isFirstClassCreation = not dcsal # test if list is empty
+        if isFirstClassCreation:
+            # a class creation is in progress
+            dcsal.append(True)
         
         f = type(obj)
         name = obj.__name__
@@ -741,9 +746,11 @@ class Pickler(pickle.Pickler):
             if k in ('__dict__', '__class__' ):
                 continue
             if type(v) in (types.GetSetDescriptorType, types.MemberDescriptorType):
-                # todo: we could use v.__objclass__ and v.__name__
-                continue
+                if v.__name__ == k and v.__objclass__ is obj:
+                    continue
             d2[k] = v
+
+        self.save_reduce(f,(name, obj.__bases__, d1), obj=obj)
 
         # Use setattr to set the remaining class members. 
         # unfortunately, we can't use the state parameter of the 
@@ -756,13 +763,14 @@ class Pickler(pickle.Pickler):
             v = d2[k]
             dcsal.append((obj, k, v))
 
-        self.save_reduce(f,(name, obj.__bases__, d1), obj=obj)
-
         if isFirstClassCreation:
-            for t in dcsal:
+            operations = dcsal[1:] # skip the True
+            del dcsal[:] # clear the list to enable recursions
+            
+            # perform the attribute assignments in the same order as they were recorded
+            for t in operations:
                 self.save_reduce(setattr, t)
                 write(pickle.POP)
-            del dcsal[:]
 
 
     def saveModule(self, obj, reload=False):
@@ -862,7 +870,7 @@ class Pickler(pickle.Pickler):
                         (obj, objSelf, objName))
         return self.save_reduce(getattr, (objSelf, objName), obj=obj)
         
-    def saveWrapperOrMethodDescriptor(self, obj):
+    def saveDescriptorWithObjclass(self, obj):
         t = obj.__objclass__
         if obj is not getattr(t, obj.__name__):
             raise pickle.PicklingError("Can't pickle %r: it's not the same object as %s.%s" %
@@ -944,7 +952,7 @@ class Pickler(pickle.Pickler):
                     except Exception:
                         m = "n.a."
                         
-                    LOGGER().info("Thing to be pickled id=%d, memo=%s, type=%s: %s" % (i, m, t, s))
+                    LOGGER().info("Thing to be pickled id=%d, memo-key=%s, type=%s: %s" % (i, m, t, s))
                 fr = fr.f_back
         finally:
             del fr

@@ -74,6 +74,18 @@ No further plans currently
 Changes
 =======
 
+Version 0.xxx
+-------------
+2012-07-17
+Important bug fix: previous versions failed to pickle some classes.
+Added support for member descriptors, getset descriptors and some
+dictproxy objects.
+    
+Added a debugging aid for "id(obj) not in self.memo" assertions.
+Set the environment variable SPICKLE_TRACE_MEMO_ENTRIES to a list of
+space separated memo keys (integer numbers). sPickle will log information 
+about the object hierarchy, when it adds a traced memo entry.
+
 Version 0.0.7
 -------------
 Minor fixes. Changed the logging to delay log messages while holding the 

@@ -861,6 +861,27 @@ class PickelingTest(TestCase):
         self.assertIsInstance(dp, types.DictProxyType)
         self.assertRaises(pickle.PicklingError, self.pickler.dumps, dp)
         
+    def testMemberDescriptor(self):
+        class C(object):
+            __slots__ = ('a')
+        orig = C.__dict__['a']
+        self.assertIsInstance(orig, types.MemberDescriptorType)
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsInstance(obj, types.MemberDescriptorType)
+        self.assertEqual(orig.__name__, obj.__name__)
+        self.assertClassEquals(orig.__objclass__, obj.__objclass__)
+        
+    def testGetSetDescriptor(self):
+        orig = PlainClass.__weakref__
+        self.assertIsInstance(orig, types.GetSetDescriptorType)
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsInstance(obj, types.GetSetDescriptorType)
+        self.assertEqual(orig.__name__, obj.__name__)
+        self.assertClassEquals(orig.__objclass__, obj.__objclass__)
+
+        
     # Tests for pickling classes
     
     def testClassicClass(self):
@@ -912,6 +933,19 @@ class PickelingTest(TestCase):
         class TestException(BaseException):
             attribute = "attribute value"
         self.classCopyTest(TestException, dis=False)
+        
+    def testClassWithForainMemberDescriptor(self):
+        class C(object):
+            __slots__ = ('md')
+        md = C.__dict__['md']
+        self.assertIsInstance(md, types.MemberDescriptorType)
+        
+        class orig:
+            pass
+        orig.md = md
+            
+        cls = self.classCopyTest(orig, dis=False)
+        self.assertIsInstance(cls.md, types.MemberDescriptorType)
 
     def assertClassEquals(self, origCls, cls, level=0):
         if origCls is cls:
