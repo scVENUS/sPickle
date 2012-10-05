@@ -33,6 +33,7 @@ import inspect
 #saved_dispatch_table = pickle.dispatch_table.copy()
 
 import types
+from pickle import PickleError, PicklingError
 try:
     from cStringIO import StringIO
 except ImportError:
@@ -43,6 +44,8 @@ import struct
 import socket
 import tempfile
 import codecs
+
+from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
 
 try:
     _trace_memo_entries = [ int(i) for i in os.environ["SPICKLE_TRACE_MEMO_ENTRIES"].split() ]
@@ -280,15 +283,19 @@ if True:
     del __func
     del __GLOBALS_DICT
         
-class DictAlreadyExistError(pickle.PickleError):
-    """The dictionary of an object has been pickled prior to the object itself.
+class ObjectAlreadyPickledError(pickle.PickleError):
+    """An object has been pickled to early
     
-    This exception is used for backtracking. Its 'obj'-attribute
-    is the object, whose dictionary had already been pickled 
+    Example: the dictionary of an object has been pickled prior to the object itself.
+    
+    This exception is used for backtracking. Its *holder* attribute
+    is the object, that must be pickled prior to the object whose 
+    memo key is *memoid*.
     """
-    def __init__(self, msg, obj, *args, **kw):
-        super(DictAlreadyExistError, self).__init__(msg, *args, **kw)
-        self.obj = obj
+    def __init__(self, msg, holder, memoid, *args, **kw):
+        super(ObjectAlreadyPickledError, self).__init__(msg, *args, **kw)
+        self.holder = holder
+        self.memoid = memoid
 
 class UnpicklingWillFailError(pickle.PicklingError):
     """This object can be pickled, but unpickling will probably fail.
@@ -315,7 +322,7 @@ class Pickler(pickle.Pickler):
     replacement. However its constructor has more optional arguments.
     """
     
-    def __init__(self, file, protocol=pickle.HIGHEST_PROTOCOL, serializeableModules=None):
+    def __init__(self, file, protocol=pickle.HIGHEST_PROTOCOL, serializeableModules=None, mangleModuleName=None):
         """
         The file argument must be either an instance of :class:`collections.MutableSequence`
         or have a `write(str)` - method that accepts a single
@@ -332,7 +339,7 @@ class Pickler(pickle.Pickler):
         more recent the version of Python needed to read the pickle
         produced.
 
-        The optional argument serializeableModules must be an iterable 
+        The optional argument *serializeableModules* must be an iterable 
         collection of modules and strings. If the pickler needs to serialize
         a module, it checks this collection to decide, if the module needs to 
         be pickled by value or by name. The module gets pickled by value, 
@@ -345,7 +352,13 @@ class Pickler(pickle.Pickler):
         * The module has an attribute `__file__` and module contains 
           a string, that is a substring of `__file__` after applying 
           a path and case normalization as appropriate for the 
-          current system. 
+          current system.
+          
+        Experimental feature: the optional argument *mangleModuleName* 
+        must be a callable with two arguments. The first argument is this 
+        pickler, the second the name of module. The callable must return 
+        a pickleable object that unpickles as a string. You can use this 
+        callable to rename modules in the pickle.
 
         .. note::
         
@@ -363,6 +376,11 @@ class Pickler(pickle.Pickler):
         if serializeableModules is None:
             serializeableModules = []
         self.serializeableModules = serializeableModules
+        
+        if mangleModuleName is not None:
+            if not callable(mangleModuleName):
+                raise TypeError("mangleModuleName must be callable")
+        self.__mangleModuleName = mangleModuleName
 
         self.__fileIsList = isinstance(file, collections.MutableSequence)
         if self.__fileIsList:
@@ -396,6 +414,7 @@ class Pickler(pickle.Pickler):
         self.dispatch[types.DictProxyType] = self.saveDictProxy.__func__
         self.dispatch[CSTRINGIO_OUTPUT_TYPE] = self.saveCStringIoOutput.__func__
         self.dispatch[CSTRINGIO_INPUT_TYPE] = self.saveCStringIoInput.__func__
+        self.dispatch[self._ObjReplacementContainer] = self.save_ObjReplacementContainer.__func__
 
         # initiallize the module_dict_ids module dict lookup table
         # this stackless specific call creates the dict self.module_dict_ids
@@ -440,13 +459,13 @@ class Pickler(pickle.Pickler):
         try:
             if self.proto >= 2:
                 self.write(pickle.PROTO + chr(self.proto))
-            self.dict_checkpoint(obj, self.save)
+            self.do_checkpoint(obj, self.save)
             self.write(pickle.STOP)
         finally:
             if not self.__fileIsList:
                 self.__write("".join(self.writeList))
 
-    def dict_checkpoint(self, obj, method, *args, **kw):
+    def do_checkpoint(self, obj, method, *args, **kw):
         """Checkpint for dictionary backtracking"""
         memo = self.memo
         writePos = len(self.writeList) 
@@ -468,13 +487,14 @@ class Pickler(pickle.Pickler):
                     return
                 method(obj, *args, **kw)
                 done = True
-            except DictAlreadyExistError, e:
-                dictHolder = e.obj
-                assert currentSave is not dictHolder
-                if memo[id(dictHolder.__dict__)][0] < memoPos:
+            except ObjectAlreadyPickledError, e:
+                holder = e.holder
+                memoid = e.memoid
+                assert currentSave is not holder
+                if memo[memoid][0] < memoPos:
                     raise
                 
-                saveList.insert(0, e.obj)
+                saveList.insert(0, holder)
                 del self.writeList[writePos:]
                 for k in memo.keys():
                     v= memo[k]
@@ -510,7 +530,7 @@ class Pickler(pickle.Pickler):
             dictId = id(objDict)
             x = self.memo.get(dictId)
             if x is not None:
-                raise DictAlreadyExistError("__dict__ already pickled (memo %s) for %r" % (x[0], obj), obj)
+                raise ObjectAlreadyPickledError("__dict__ already pickled (memo %s) for %r" % (x[0], obj), obj, dictId)
 
 
         # special cases 
@@ -602,13 +622,77 @@ class Pickler(pickle.Pickler):
                          id(obj), obj, type(obj), 
                          m[0], m[1], type(m[1]))
                 self._dumpSaveStack()
+
+    
+    class _ObjReplacementContainer(object):
+        """
+        An auxiliary object, that can be used to replace arbitrary objects in the pickle
         
+        The basic idea is simple: if you need to replace an object with a different on, 
+        you save the replacement object and then you make the memo entry for the 
+        original object point to the replacement object.
+        
+        However the details are a little bit involved: the original object must not
+        be in the memo, when you save the replacement object. Otherwise you get inconsistent
+        results unpickling. Therefore we need to backtrack, if the original object is already 
+        in the memo. In order to be able to use the existing backtracking mechanism, 
+        we need a holder object for the original and the replacement. 
+        :class:`_ObjReplacementContainer` is such a holder object.
+        
+        About the memo entry for the original: in order that we are able to recognize 
+        a manipulated entry, we set the second element of the memo value to the 
+        pair ``(original, replacement)``.
+        
+        """
+        __slots__ = ("original", "replacement")
+        def __init__(self, original, replacement):
+            """Create the holder"""
+            self.original = original
+            self.replacement = replacement
+            
+    def save_ObjReplacementContainer(self, obj):
+        """Save a :class:`_ObjReplacementContainer`"""
+        replacement = obj.replacement
+        original = obj.original 
+        if original is replacement:
+            # simple case: no replacement
+            return self.save(replacement)
+        
+        origId = id(original)
+        memo = self.memo
+        x = memo.get(origId)
+        if x is None:
+            # the original is not in the memo
+            self.save(replacement)
+            # as a side effect of save(replacement) now origId could be in the memo
+            x = memo.get(origId)
+            if x is None:
+                # not in the memo, add it. We replace the memo entry immediately below
+                self.memoize(original)
+            l = self.memo[id(replacement)][0]
+            self.memo[origId] = (l, (original, replacement))
+            return True
+        elif isinstance(x[1], tuple) and 2 == len(x[1]):
+            if x[1][0] is original and x[1][1] == replacement:
+                # the memo contains an manipulated entry and it matches replacement
+                # we use this entry instead of replacement.
+            
+                # Will probably yield a memo reference
+                return self.save(x[1][1])
+            else:
+                # a manipulated memo, but it does not match this replacement
+                raise PicklingError("Inconsistent replacement requested.")
+
+        # backtrack
+        raise ObjectAlreadyPickledError("Object to be replaced already in memo: "+repr(original), obj, origId)
+
+    
     def save_dict(self, obj):
         if obj is sys.modules:
             self.write(pickle.GLOBAL + 'sys' + '\n' + 'modules' + '\n')
             self.memoize(obj)
             return
-        self.dict_checkpoint(obj, self._save_dict_impl)
+        self.do_checkpoint(obj, self._save_dict_impl)
         
     def _save_dict_impl(self, obj):
         ## Stackless addition BEGIN
@@ -719,6 +803,12 @@ class Pickler(pickle.Pickler):
         reduce = pickle.dispatch_table.get(type(obj))
         if reduce:
             rv = reduce(obj)
+            if isinstance(rv, tuple) and 3 == len(rv) and STACKLESS_FUNCTION_WRAPPER is rv[0]:
+                state = rv[2]
+                if isinstance(state, tuple) and 6 == len(state):
+                    pickledModule = self._saveMangledModuleName(state[5])
+                    if not pickledModule is state[5]:
+                        rv = ( rv[0], rv[1], state[:5] + (pickledModule,))                
         else:
             # Check for a __reduce_ex__ method, fall back to __reduce__
             reduce = getattr(obj, "__reduce_ex__", None)
@@ -753,7 +843,10 @@ class Pickler(pickle.Pickler):
         name = obj.__name__
         d1 = {}; d2 = {}
         for (k, v) in obj.__dict__.iteritems():
-            if k in ('__doc__', '__module__', '__slots__'):
+            if k == '__module__':
+                d1[k] = self._saveMangledModuleName(v)
+                continue
+            if k in ('__doc__', '__slots__'):
                 d1[k] = v
                 continue
             if k in ('__dict__', '__class__' ):
@@ -820,15 +913,16 @@ class Pickler(pickle.Pickler):
         
         # save the current implementation of the module
         doDel = obj.__name__ not in sys.modules
+        pickledModuleName = self._saveMangledModuleName(obj.__name__)
         if doDel or not reload:
             self.save(restore_modules_entry)
             self.write(pickle.TRUE if doDel else pickle.FALSE)
-            self.save_reduce(save_modules_entry, (obj.__name__,))
+            self.save_reduce(save_modules_entry, (pickledModuleName,))
             
         savedModule = save_modules_entry(obj.__name__)
         try:            
             # create the module
-            self.save_reduce(create_module, (type(obj), obj.__name__, getattr(obj, "__doc__", None)), obj.__dict__, obj=obj)
+            self.save_reduce(create_module, (type(obj), pickledModuleName, getattr(obj, "__doc__", None)), obj.__dict__, obj=obj)
         finally:
             restore_modules_entry(True, savedModule, obj, preserveReferenceToNew=False)
             # Flush log messages
@@ -837,6 +931,55 @@ class Pickler(pickle.Pickler):
         if doDel or not reload:
             write(pickle.TUPLE3+pickle.REDUCE)
         return True
+    
+        
+    def _saveMangledModuleName(self, name):
+        """
+        This method takes a module name and eventually replaces the module name with a different object.
+        
+        :param name: a module name
+        :returns: the replacement
+        
+        """
+        memo = self.memo
+        nid = id(name)
+        x = memo.get(nid)
+        
+        # handle the case, that the name has been replaced before
+        if x is not None and isinstance(x[1], tuple) and 2 == len(x[1]) and x[1][0] is name:
+            # already replaced
+            return x[1][1]
+        
+        mangled = self.mangleModuleName(name)
+        if mangled is name:
+            # no replacement required
+            return mangled
+
+        # use the object replacement system
+        orc = self._ObjReplacementContainer(name, mangled)
+        self.save(orc)
+        # remove the replacement from the stack
+        self.write(pickle.POP)
+        
+        # now we can get the replacement from the memo
+        x = memo.get(nid)
+        assert x is not None and isinstance(x[1], tuple) and 2 == len(x[1]) and x[1][0] is name
+        return x[1][1]
+    
+    def mangleModuleName(self, name):
+        """
+        Mangle a module name.
+        
+        This implementation returns *name*. A subclass my override 
+        this method, if it needs to change the module name in the pickle.
+        
+        :param name: a module name or `None`.
+        :returns: if a replacement is required, returns the replacement, otherwise returns *name*.
+        
+        """
+        if self.__mangleModuleName is not None:
+            return self.__mangleModuleName(self, name)
+        return name
 
     def saveLock(self, obj):
         return self.save_reduce(create_thread_lock, (obj.locked(), ), obj=obj)
@@ -1037,7 +1180,7 @@ class SPickleTools(object):
             serializeableModules = []
         self.serializeableModules = serializeableModules
         
-    def dumps(self, obj, persistent_id = None, doCompress=True):
+    def dumps(self, obj, persistent_id = None, doCompress=True, mangleModuleName=None):
         """Pickle an object and return the pickle
         
         This method works similar to the regular dumps method, but
@@ -1055,11 +1198,16 @@ class SPickleTools(object):
                            must be a function (or method), that takes a single string parameter
                            and returns a compressed version. Otherwise, if doCompress is not
                            callable the function :func:`bz2.compress` is used.
+        :param mangleModuleName: Unless mangleModuleName is `None`, it must be a 
+                        callable with 2 arguments: the first receives the pickler, the second the 
+                        module name of the object to be pickled. The callable must return an
+                        object to be pickled instead of the module name. This can be a different 
+                        string or a object that gets unpickled as a string. 
         :return: the pickle, optionally compressed
         :rtype: :class:`str`
         """
         l = []
-        pickler = Pickler(l, 2, serializeableModules=self.serializeableModules)
+        pickler = Pickler(l, 2, serializeableModules=self.serializeableModules, mangleModuleName=mangleModuleName)
         if persistent_id is not None:
             pickler.persistent_id = persistent_id
         pickler.dump(obj)

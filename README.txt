@@ -83,6 +83,9 @@ Replaced REDUCE __import__ ... with GLOBAL. Now GLOBAL is used for all imports.
 This change makes it possible to get all imported modules
 using SPickleTools.getImportList().
 
+Added an option to change the module name(s) of pickled objects, if the
+respective module is pickled by value.
+
 Version 0.0.8
 -------------
 2012-07-17

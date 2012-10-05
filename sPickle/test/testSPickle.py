@@ -322,7 +322,7 @@ class PickelingTest(TestCase):
         dis = kw.get("dis")
         try:
             toBeDumped = (preObjects, obj[0] if len(obj) == 1 else obj )
-            p = self.pickler.dumps(toBeDumped)
+            p = self.pickler.dumps(toBeDumped, mangleModuleName=kw.get("mangleModuleName"))
             self.pickler.dis(p, out=StringIO())
         except:
             exinfo = sys.exc_info()
@@ -454,6 +454,64 @@ class PickelingTest(TestCase):
         obj, tif = self.wfModuleTest(anonymousWfModule, anonymousWfModule.__dict__)
         self.assertFalse(obj.__name__ in tif.post_modules)
 
+    class MangleModuleName(object):
+        """Add a prefix to certain module names"""
+        def __init__(self, start, prefix):
+            """
+            Create a MangleModuleName
+            
+            :param start: mangle modules starting with *start*
+            :param prefix: add *prefix* the name of a mangled module
+            
+            """
+            self.start = start
+            self.prefix = prefix
+        def __call__(self, pickler, name):
+            """
+            A sPickle.Pickler mangleModuleName functor
+            """
+            if isinstance(name, str) and name.startswith(self.start):
+                prefix = self.prefix
+                class ReplacedModuleName(object):
+                    def __reduce__(self):
+                        return (operator.add, (prefix, name))               
+                return ReplacedModuleName()
+            return name
+        def getMangledName(self, name):
+            """Unit test helper function"""
+            if isinstance(name, str) and name.startswith(self.start):
+                return self.prefix + name
+            return name
+
+    def testWfModule_MangleModuleName(self):
+        orig = wf_module
+        self.assertTrue(orig.__name__ in sys.modules)
+        mmn = self.MangleModuleName(orig.__name__[:-2], "renamed_")
+        self.assertFalse(mmn.getMangledName(orig.__name__) in sys.modules)
+        obj, tif = self.wfModuleTest(orig, mangleModuleName=mmn, dis=False)
+        self.assertTrue(obj is tif.post_modules[mmn.getMangledName(orig.__name__)])
+
+    def testWfModuleU_MangleModuleName(self):
+        orig = wf_module
+        self.assertTrue(orig.__name__ in sys.modules)
+        mmn = self.MangleModuleName(orig.__name__, "renamed_")
+        self.assertFalse(mmn.getMangledName(orig.__name__) in sys.modules)
+        obj, tif = self.wfModuleTest(orig, mangleModuleName=mmn, unimport=True)
+        self.assertEqual(obj, tif.post_modules.get(mmn.getMangledName(orig.__name__)))
+        self.assertTrue(obj is tif.post_modules[mmn.getMangledName(orig.__name__)])
+
+    def testAnonymousWfModule_MangleModuleName(self):
+        self.assertFalse(anonymousWfModule.__name__ in sys.modules)
+        mmn = self.MangleModuleName(anonymousWfModule.__name__, "renamed_")
+        obj, tif = self.wfModuleTest(anonymousWfModule, mangleModuleName=mmn, preObjects=anonymousWfModule.__name__, dis=False)
+        self.assertFalse(obj.__name__ in tif.post_modules)
+
+    def testAnonymousWfModule2_MangleModuleName(self):
+        self.assertFalse(anonymousWfModule.__name__ in sys.modules)
+        mmn = self.MangleModuleName(anonymousWfModule.__name__, "renamed_")
+        obj, tif = self.wfModuleTest(anonymousWfModule, mangleModuleName=mmn, preObjects=anonymousWfModule.__dict__, dis=False)
+        self.assertFalse(obj.__name__ in tif.post_modules)
+
     @skipIf(gtk is None, "gtk not available")
     def testGtk(self):
         # the pure stackless pickler fails to import gtk
@@ -476,9 +534,9 @@ class PickelingTest(TestCase):
         self.assertFalse(orig.__name__ in tif.names, "Import of forbidden module %r" % (orig.__name__,))
         return (obj, tif)
         
-    def _moduleTestCommon(self, module, preObjects=None, unimport=(), dis=False):
+    def _moduleTestCommon(self, module, preObjects=None, unimport=(), dis=False, mangleModuleName=None):
         orig = module
-        p = self.dumpWithPreobjects(preObjects, orig, dis=dis)
+        p = self.dumpWithPreobjects(preObjects, orig, dis=dis, mangleModuleName=mangleModuleName)
         
         if unimport:
             if unimport is True:
@@ -491,14 +549,25 @@ class PickelingTest(TestCase):
         # test obj        
         self.assertEquals(type(obj), type(orig))
         self.assertTrue(type(obj) is type(orig))
-        self.assertEquals(obj.__name__, orig.__name__)
+        oname = orig.__name__
+        if mangleModuleName:
+            oname = mangleModuleName.getMangledName(oname)
+        self.assertEquals(obj.__name__, oname)
         self.assertEqual(set(obj.__dict__.iterkeys()), set(orig.__dict__.iterkeys()))
         if callable(getattr(orig, "isOk", None)):
             self.assertTrue(obj.isOk() is True)
         
         if tif.pre_modules.has_key(orig.__name__):
-            # the import of the module must not change anything 
-            self.assertEqual(tif.pre_modules, tif.post_modules)
+            # the import of the module must not change anything
+            if mangleModuleName is None:
+                self.assertEqual(tif.pre_modules, tif.post_modules)
+            else:
+                post = dict(tif.post_modules)
+                for k in tif.pre_modules.keys():
+                    mangled = mangleModuleName.getMangledName(k)
+                    if mangled != k:
+                        del post[mangled]
+                self.assertEqual(tif.pre_modules, post)
             
         return (obj, tif)
 
