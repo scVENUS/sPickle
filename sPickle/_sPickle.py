@@ -79,8 +79,15 @@ EMPTY_RANGE_ITERATOR = iter(xrange(0))
 RANGEITERATOR_TYPE = type(EMPTY_RANGE_ITERATOR)
 
 EMPTY_SET_ITERATOR = iter(set())
-SETITERATOR_TYPE = type(EMPTY_SET_ITERATOR)
-
+SETITERATOR_TYPE = type(EMPTY_SET_ITERATOR)
+try:
+    from cStringIO import InputType as CSTRINGIO_INPUT_TYPE
+    from cStringIO import OutputType as CSTRINGIO_OUTPUT_TYPE
+    from cStringIO import StringIO as CSTRINGIO_StringIO
+except ImportError:
+    class CSTRINGIO_INPUT_TYPE(object): pass
+    class CSTRINGIO_OUTPUT_TYPE(object): pass
+    
 class _DelayedLogger(object):
     from imp import lock_held
     
@@ -387,6 +394,8 @@ class Pickler(pickle.Pickler):
         self.dispatch[operator.itemgetter] = self.saveOperatorItemgetter.__func__
         self.dispatch[operator.attrgetter] = self.saveOperatorAttrgetter.__func__
         self.dispatch[types.DictProxyType] = self.saveDictProxy.__func__
+        self.dispatch[CSTRINGIO_OUTPUT_TYPE] = self.saveCStringIoOutput.__func__
+        self.dispatch[CSTRINGIO_INPUT_TYPE] = self.saveCStringIoInput.__func__
 
         # initiallize the module_dict_ids module dict lookup table
         # this stackless specific call creates the dict self.module_dict_ids
@@ -542,6 +551,10 @@ class Pickler(pickle.Pickler):
             return self.save_reduce(iter, (xrange(0),), obj=obj)
         if obj is EMPTY_SET_ITERATOR:
             return self.save_reduce(iter, (set(),), obj=obj)
+        if obj is CSTRINGIO_INPUT_TYPE:
+            return self.save_global(obj, "InputType")
+        if obj is CSTRINGIO_OUTPUT_TYPE:
+            return self.save_global(obj, "OutputType")
                                 
         # handle __new__ and similar methods of built-in types        
         if (isinstance(obj, type(object.__new__)) and 
@@ -921,6 +934,48 @@ class Pickler(pickle.Pickler):
             # probably a dict proxy of class attr.__objclass__
             return self.save_reduce(getattr, (attr.__objclass__, '__dict__'), obj=obj)
         raise pickle.PicklingError("Can't pickle %r: it is not the dict-proxy of a class dictionary" % (obj,))
+    
+    def saveCStringIoOutput(self, obj):
+        try:
+            pos = obj.tell()
+        except ValueError:
+            # closed file
+            pos = None
+        else:
+            value = obj.getvalue()
+            
+        self.save_reduce(CSTRINGIO_StringIO, (), obj = obj)
+        if pos is None:
+            # close the file
+            self.save_reduce(CSTRINGIO_OUTPUT_TYPE.close, (obj,))
+            self.write(pickle.POP)
+        else:
+            if value:
+                self.save_reduce(CSTRINGIO_OUTPUT_TYPE.write, (obj, value))
+                self.write(pickle.POP)
+                if pos != len(value):
+                    self.save_reduce(CSTRINGIO_OUTPUT_TYPE.seek, (obj, pos, 0))
+                    self.write(pickle.POP)        
+
+    def saveCStringIoInput(self, obj):
+        try:
+            pos = obj.tell()
+        except ValueError:
+            # closed file
+            pos = None
+            value = ''
+        else:
+            value = obj.getvalue()
+            
+        self.save_reduce(CSTRINGIO_StringIO, (value,), obj = obj)
+        
+        if pos is None:
+            # close the file
+            self.save_reduce(CSTRINGIO_INPUT_TYPE.close, (obj,))
+            self.write(pickle.POP)
+        elif 0 != pos:
+            self.save_reduce(CSTRINGIO_INPUT_TYPE.seek, (obj, pos, 0))
+            self.write(pickle.POP)        
     
     def _dumpSaveStack(self):
         from inspect import currentframe

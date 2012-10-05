@@ -22,6 +22,7 @@ from unittest import TestCase, skipIf
 
 import pickletools
 from StringIO import StringIO
+import cStringIO
 import pickle
 import types
 import sys
@@ -881,7 +882,91 @@ class PickelingTest(TestCase):
         self.assertEqual(orig.__name__, obj.__name__)
         self.assertClassEquals(orig.__objclass__, obj.__objclass__)
 
+    def testCStringIoInputType(self):
+        orig = cStringIO.InputType
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testCStringIoOutputType(self):
+        orig = cStringIO.OutputType
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+                
+    def testCStringIoOutput(self):
+        orig = cStringIO.StringIO()
+
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertEqual(obj.getvalue(), orig.getvalue())
+        self.assertEqual(obj.tell(), orig.tell())
         
+        orig.write("0123456789")
+        
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertEqual(obj.getvalue(), orig.getvalue())
+        self.assertEqual(obj.tell(), orig.tell())
+
+        orig.seek(5,0)
+
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertEqual(obj.getvalue(), orig.getvalue())
+        self.assertEqual(obj.tell(), orig.tell())
+        
+        orig.close()
+        self.assertRaises(ValueError, orig.getvalue)
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertRaises(ValueError, obj.getvalue)
+        
+    def testCStringIoInput(self):
+        orig = cStringIO.StringIO("")
+
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertEqual(obj.getvalue(), orig.getvalue())
+        self.assertEqual(obj.tell(), orig.tell())
+        
+        orig = cStringIO.StringIO("0123456789")
+        
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertEqual(obj.getvalue(), orig.getvalue())
+        self.assertEqual(obj.tell(), orig.tell())
+
+        orig.seek(5,0)
+
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertEqual(obj.getvalue(), orig.getvalue())
+        self.assertEqual(obj.tell(), orig.tell())
+        
+        orig.close()
+        self.assertRaises(ValueError, orig.getvalue)
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertRaises(ValueError, obj.getvalue)
+
+                
     # Tests for pickling classes
     
     def testClassicClass(self):
