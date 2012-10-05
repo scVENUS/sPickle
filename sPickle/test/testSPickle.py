@@ -1135,9 +1135,10 @@ class PickelingTest(TestCase):
         orig = wf_module
         p = self.pickler.dumps(orig)
         importList = self.pickler.getImportList(p)
+        self.assertIsInstance(importList, list)
         for module in importList:
-            print module
-        obj = self.pickler.loads(p)
+            self.assertIsInstance(module, str)
+            self.assertEqual(len(module.split(" ")), 2)
 
     # Handling of resource objects (files, socket, socketpair)
 
@@ -1155,7 +1156,11 @@ class PickelingTest(TestCase):
             
         try:
             orig = (openFile, closedFile, sys.__stdout__, socket_, sp )
-            p = self.pickler.dumps(orig)
+            logging.disable(logging.WARNING)
+            try:
+                p = self.pickler.dumps(orig)
+            finally:
+                logging.disable(0)
             restored = self.pickler.loads(p)
             
             self.assertIsInstance(restored, tuple)
