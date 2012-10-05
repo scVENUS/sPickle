@@ -74,6 +74,15 @@ No further plans currently
 Changes
 =======
 
+Version 0.0.x
+-------------
+2012-10-05
+Support pickling of cStringIO objects.
+
+Replaced REDUCE __import__ ... with GLOBAL. Now GLOBAL is used for all imports.
+This change makes it possible to get all imported modules
+using SPickleTools.getImportList().
+
 Version 0.0.8
 -------------
 2012-07-17

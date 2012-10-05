@@ -484,8 +484,9 @@ class PickelingTest(TestCase):
             if unimport is True:
                 unimport = (orig,)
         
-        with TestImportFunctor(*unimport) as tif:    
-            obj = self.pickler.loads(p)[-1]
+        with TestImportFunctor(*unimport) as tif:
+            # cPickle does not use our modified __import__ function for the GLOBAL op code
+            obj = self.pickler.loads(p, useCPickle=False)[-1]
 
         # test obj        
         self.assertEquals(type(obj), type(orig))

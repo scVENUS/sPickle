@@ -801,14 +801,19 @@ class Pickler(pickle.Pickler):
                 except pickle.PicklingError:
                     LOGGER().exception("Can't pickle anonymous module: %r", obj)
                     raise
-                
-            # self.save_reduce(import_module, (obj.__name__,), obj=obj)
-            if __import__(obj.__name__) is obj:
-                self.save_reduce(__import__, (obj.__name__,), obj=obj)
-            else:
-                self.save_reduce(__import__, (obj.__name__,))
-                write(pickle.POP)
-                self.save_reduce(operator.getitem, (sys.modules, obj.__name__), obj=obj)
+
+            # import __name__ from the module. It is always present, because 
+            # obj is a module and we need the name anyway
+            # 
+            # The complete operation is
+            # operator.getitem(sys.modules, Unpickler.find_class(obj.__name__, "__name__"))
+            # (Unpickler.find_class is the implementation of GLOBAL)
+            self.save(operator.getitem)
+            self.save(sys.modules)
+            self.write(pickle.GLOBAL + obj.__name__ + '\n__name__\n')
+            self.write(pickle.TUPLE2)
+            self.write(pickle.REDUCE)
+            self.memoize(obj)
             return True
                 
         # do it ourself
