@@ -1088,11 +1088,18 @@ class PickelingTest(TestCase):
         self.assertRaises(ValueError, obj.getvalue)
 
     def testOrderedDict(self):
+        # the method __reduce__ of collections.OrderedDict fails for recursive
+        # dictionaries. Test our fix
         orig = collections.OrderedDict([['key1', 'value1'], ['key2', 'value2']])
+        orig['self'] = orig # a recursive dict. 
         p = self.dumpWithPreobjects(None, orig)
         obj = self.pickler.loads(p)[-1]
         self.assertIsNot(obj, orig)
         self.assertIsInstance(obj, collections.OrderedDict)
+        self.assertIs(obj, obj['self'])
+        # assertEqual fails to handle a recursive object
+        del obj['self']
+        del orig['self']
         self.assertEqual(obj, orig)
                 
     # Tests for pickling classes
