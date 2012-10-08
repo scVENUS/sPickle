@@ -44,6 +44,7 @@ import struct
 import socket
 import tempfile
 import codecs
+import weakref
 
 from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
 
@@ -422,6 +423,9 @@ class Pickler(pickle.Pickler):
         self.dispatch[CSTRINGIO_OUTPUT_TYPE] = self.saveCStringIoOutput.__func__
         self.dispatch[CSTRINGIO_INPUT_TYPE] = self.saveCStringIoInput.__func__
         self.dispatch[collections.OrderedDict] = self.saveOrderedDict.__func__
+        self.dispatch[weakref.ReferenceType] = self.saveWeakref.__func__
+
+        # auxiliary classes
         self.dispatch[self._ObjReplacementContainer] = self.save_ObjReplacementContainer.__func__
 
         # initiallize the module_dict_ids module dict lookup table
@@ -585,6 +589,18 @@ class Pickler(pickle.Pickler):
             return self.save_global(obj, "OutputType")
         if obj is CELL_TYPE:
             return self.save_reduce(type, (NONE_CELL,), obj=obj)
+        if obj is weakref.ReferenceType:
+            self.write(pickle.GLOBAL + 'weakref\nReferenceType\n')
+            self.memoize(obj)
+            return
+        if obj is weakref.ProxyType:
+            self.write(pickle.GLOBAL + 'weakref\nProxyType\n')
+            self.memoize(obj)
+            return
+        if obj is weakref.CallableProxyType:
+            self.write(pickle.GLOBAL + 'weakref\nCallableProxyType\n')
+            self.memoize(obj)
+            return
                                 
         # handle __new__ and similar methods of built-in types        
         if (isinstance(obj, type(object.__new__)) and 
@@ -1171,7 +1187,15 @@ class Pickler(pickle.Pickler):
         # save the list, correct version
         self.save_reduce(obj=obj, dictitems=iter(savedItems), *rv)
 
-    
+    def saveWeakref(self, obj):
+        r = obj()
+        if r:
+            self.save_reduce(weakref.ref, (r,), obj=obj)
+        else:
+            # use an new object.
+            self.save_reduce(weakref.ref, (collections.OrderedDict(),), obj=obj)
+
+
     def _dumpSaveStack(self):
         from inspect import currentframe
         from pprint import pformat

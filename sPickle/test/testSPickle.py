@@ -37,6 +37,8 @@ import socket
 import collections
 import logging
 import operator
+import weakref
+
 try:
     import gtk
 except ImportError:
@@ -1108,7 +1110,45 @@ class PickelingTest(TestCase):
         del obj['self']
         del orig['self']
         self.assertEqual(obj, orig)
-                
+
+    def testTypeWeakrefReferenceType(self):
+        orig = weakref.ReferenceType
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testTypeWeakrefProxyType(self):
+        orig = weakref.ProxyType
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testTypeWeakrefCallableProxyType(self):
+        orig = weakref.CallableProxyType
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testWeakrefRef1(self):
+        something = PlainClass(123)
+        orig = weakref.ref(something)
+        p = self.dumpWithPreobjects(something, orig, dis=False)
+        obj, obj2 = self.pickler.loads(p)
+        self.assertIsNot(obj, something)
+        self.assertIsInstance(obj, type(something))
+        self.assertIsNot(obj2, orig)
+        self.assertIsInstance(obj2, type(orig))
+        self.assertIs(obj2(), obj)
+
+    def testWeakrefRef2(self):
+        # dead ref case
+        orig = weakref.ref(PlainClass(123))
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertIsNone(obj())
+
     # Tests for pickling classes
     
     def testClassicClass(self):
