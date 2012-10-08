@@ -1262,7 +1262,7 @@ class SPickleTools(object):
                 return c
         return p
         
-    def dumps_with_external_ids(self, obj, idmap, matchResources=False, matchNetref=False):
+    def dumps_with_external_ids(self, obj, idmap, matchResources=False, matchNetref=False, **kw):
         """
         Pickle an object, that references objects that can't be pickled.
         
@@ -1283,6 +1283,7 @@ class SPickleTools(object):
         :param object matchResources: if true in a boolean context, replace resource objects. 
         :param object matchNetref: if true in a boolean context, replace RPyC proxies (technically 
                             objects of class :class:`rpyc.core.netref.BaseNetref`).
+        :param kw: other keyword arguments that are passed on to :meth:`dumps`.
         """
         def persistent_id(obj):
             oid = id(obj)
@@ -1302,7 +1303,7 @@ class SPickleTools(object):
                 return oid
             return None
 
-        pickle = self.dumps(obj, persistent_id)
+        pickle = self.dumps(obj, persistent_id, **kw)
         return pickle
     
     @classmethod
