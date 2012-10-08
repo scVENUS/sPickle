@@ -654,9 +654,60 @@ class PickelingTest(TestCase):
         # Todo: compare the other attributes of a function
         return obj
 
+    # Tests for function creation
+    def testTypeCode(self):
+        p = self.pickler.dumps(types.CodeType)
+        obj = self.pickler.loads(p)
+        self.assertTrue(obj is types.CodeType)
+
+    def testTypeCell(self):
+        cellType = type((lambda: self).func_closure[0])
+        p = self.pickler.dumps(cellType)
+        obj = self.pickler.loads(p)
+        self.assertTrue(obj is cellType)
+    
+    def testCodeObject(self):
+        # a function code object
+        orig = self.testCodeObject.im_func.func_code
+        self.codeObjectTest(orig, dis=False)
+
+    def codeObjectTest(self, orig, dis=False):
+        # a function code object
+        self.assertIsInstance(orig, types.CodeType)
+        p = self.dumpWithPreobjects(None, orig, dis=dis)
+        obj = self.pickler.loads(p)[1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, types.CodeType)
+        self.assertEqual(obj.co_name, orig.co_name)
+        self.assertEqual(obj.co_argcount, orig.co_argcount)
+        self.assertEqual(obj.co_nlocals, orig.co_nlocals)
+        self.assertEqual(obj.co_varnames, orig.co_varnames)
+        self.assertEqual(obj.co_cellvars, orig.co_cellvars)
+        self.assertEqual(obj.co_freevars, orig.co_freevars)
+        self.assertEqual(obj.co_code, orig.co_code)
+        self.assertEqual(obj.co_consts, orig.co_consts)
+        self.assertEqual(obj.co_names, orig.co_names)
+        self.assertEqual(obj.co_filename, orig.co_filename)
+        self.assertEqual(obj.co_firstlineno, orig.co_firstlineno)
+        self.assertEqual(obj.co_lnotab, orig.co_lnotab)
+        self.assertEqual(obj.co_stacksize, orig.co_stacksize)
+        self.assertEqual(obj.co_flags, orig.co_flags)
+        
 
     # Tests for special objects and types
+    
+    def testDictSysModules(self):
+        p = self.pickler.dumps(sys.modules)
+        obj = self.pickler.loads(p)
+        self.assertTrue(obj is sys.modules)
 
+    def testDict__builtins__(self):
+        from __builtin__ import __dict__ as bid
+        self.assertIs(bid, __builtins__)
+        p = self.dumpWithPreobjects(None, __builtins__, dis=False)
+        obj = self.pickler.loads(p)[1]
+        self.assertIs(obj, __builtins__)
+        
     def testTypeType(self):
         p = self.pickler.dumps(type)
         obj = self.pickler.loads(p)
@@ -1036,6 +1087,13 @@ class PickelingTest(TestCase):
         self.assertIsInstance(obj, type(orig))
         self.assertRaises(ValueError, obj.getvalue)
 
+    def testOrderedDict(self):
+        orig = collections.OrderedDict([['key1', 'value1'], ['key2', 'value2']])
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, collections.OrderedDict)
+        self.assertEqual(obj, orig)
                 
     # Tests for pickling classes
     

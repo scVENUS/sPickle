@@ -162,7 +162,7 @@ else:
 
 
 #
-# The next 8 functions are used to unpickle various types
+# The next 9 functions are used to unpickle various types
 #
 def create_module(cls, name, doc=None):
     """create and imports a module.
@@ -252,6 +252,9 @@ def create_closed_socketpair_socket():
     s = so._sock
     so.close()
     return s
+
+def create_cell(obj):
+    return (lambda: obj).func_closure[0]
     
 if True:
     #
@@ -280,8 +283,12 @@ if True:
     create_closed_socketpair_socket = __func(create_closed_socketpair_socket.func_code,
                                              __GLOBALS_DICT,
                                             'create_closed_socketpair_socket_')
+    create_cell = __func(create_cell.func_code, __GLOBALS_DICT, 'create_cell_')
     del __func
     del __GLOBALS_DICT
+
+NONE_CELL = create_cell(None)
+CELL_TYPE = type(NONE_CELL)
         
 class ObjectAlreadyPickledError(pickle.PickleError):
     """An object has been pickled to early
@@ -414,6 +421,7 @@ class Pickler(pickle.Pickler):
         self.dispatch[types.DictProxyType] = self.saveDictProxy.__func__
         self.dispatch[CSTRINGIO_OUTPUT_TYPE] = self.saveCStringIoOutput.__func__
         self.dispatch[CSTRINGIO_INPUT_TYPE] = self.saveCStringIoInput.__func__
+        self.dispatch[collections.OrderedDict] = self.saveOrderedDict.__func__
         self.dispatch[self._ObjReplacementContainer] = self.save_ObjReplacementContainer.__func__
 
         # initiallize the module_dict_ids module dict lookup table
@@ -575,6 +583,8 @@ class Pickler(pickle.Pickler):
             return self.save_global(obj, "InputType")
         if obj is CSTRINGIO_OUTPUT_TYPE:
             return self.save_global(obj, "OutputType")
+        if obj is CELL_TYPE:
+            return self.save_reduce(type, (NONE_CELL,), obj=obj)
                                 
         # handle __new__ and similar methods of built-in types        
         if (isinstance(obj, type(object.__new__)) and 
@@ -1124,6 +1134,36 @@ class Pickler(pickle.Pickler):
         elif 0 != pos:
             self.save_reduce(CSTRINGIO_INPUT_TYPE.seek, (obj, pos, 0))
             self.write(pickle.POP)        
+    
+    def saveOrderedDict(self, obj):
+        # the __repr__ implementation of collections.OrderedDict is broken
+        # it returns (collections.OrderedDict, ( List of key-value pairs) )
+        # which pickles the ( List of key-value pairs) prior to the 
+        # dict-object itself. This causes an infinite recursion, if the 
+        # dict contains a reference to itself.
+        
+        try:
+            reduce_ = obj.__reduce_ex__
+        except AttributeError:
+            rv = obj.__reduce__()
+        else:
+            rv = reduce_(self.proto)
+            
+        if type(rv) is types.StringType:
+            self.save_global(obj, rv)
+            return
+        
+        try:
+            items = rv[1][0]
+        except Exception:
+            return self.save_reduce(obj=obj, *rv)
+        if not isinstance(items, list) or not list:
+            return self.save_reduce(obj=obj, *rv)
+        savedItems = items[:]
+        del items[:]
+        # save the list, correct version
+        self.save_reduce(obj=obj, dictitems=iter(savedItems), *rv)
+
     
     def _dumpSaveStack(self):
         from inspect import currentframe
