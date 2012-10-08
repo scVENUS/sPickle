@@ -486,6 +486,23 @@ class PickelingTest(TestCase):
                 return self.prefix + name
             return name
 
+    def testModule_MangleModuleName(self):
+        orig = tabnanny
+        self.assertTrue(orig.__name__ in sys.modules)
+        mmn = self.MangleModuleName(orig.__name__, "renamed_", package=orig.__name__)
+        mangledName = mmn.getMangledName(orig.__name__)
+
+        replacedObj = types.ModuleType(mangledName)
+        replacedObj.__dict__.update(orig.__dict__)
+        replacedObj.__dict__['__name__'] = mangledName
+        sys.modules[mangledName] = replacedObj
+        try:
+            obj, tif = self._moduleTestCommon(orig, mangleModuleName=mmn)
+        finally:
+            del sys.modules[mangledName]
+
+        self.assertTrue(obj is tif.post_modules[mangledName])
+
     def testWfModule_MangleModuleName(self):
         orig = wf_module
         self.assertTrue(orig.__name__ in sys.modules)

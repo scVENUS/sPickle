@@ -907,9 +907,11 @@ class Pickler(pickle.Pickler):
 
     def saveModule(self, obj, reload=False):
         write = self.write
-        
+
         self.module_dict_ids[id(obj.__dict__)] = obj
-        
+
+        pickledModuleName = self._saveMangledModuleName(obj.__name__)
+
         if not self.mustSerialize(obj):
             # help pickling unimported modules
             if obj is not sys.modules.get(obj.__name__):
@@ -927,19 +929,28 @@ class Pickler(pickle.Pickler):
             # The complete operation is
             # operator.getitem(sys.modules, Unpickler.find_class(obj.__name__, "__name__"))
             # (Unpickler.find_class is the implementation of GLOBAL)
-            self.save(operator.getitem)
-            self.save(sys.modules)
-            self.write(pickle.GLOBAL + obj.__name__ + '\n__name__\n')
-            self.write(pickle.TUPLE2)
-            self.write(pickle.REDUCE)
-            self.memoize(obj)
+            if isinstance(pickledModuleName, str):
+                # static import
+                self.save(operator.getitem)
+                self.save(sys.modules)
+                self.write(pickle.GLOBAL + pickledModuleName + '\n__name__\n')
+                self.write(pickle.TUPLE2)
+                self.write(pickle.REDUCE)
+                self.memoize(obj)
+            else:
+                # dynamic import version of the following code
+                # __import__(pickledModuleName)
+                # mod = sys.modules[pickledModuleName]
+                self.save_reduce(__import__, (pickledModuleName,))
+                self.write(pickle.POP)
+                self.save_reduce(operator.getitem, (sys.modules, pickledModuleName,), obj=obj)
+
             return True
-                
+
         # do it ourself
-        
+
         # save the current implementation of the module
         doDel = obj.__name__ not in sys.modules
-        pickledModuleName = self._saveMangledModuleName(obj.__name__)
         try:
             objPackage = obj.__package__
         except AttributeError:
