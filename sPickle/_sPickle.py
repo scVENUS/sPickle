@@ -924,6 +924,13 @@ class Pickler(pickle.Pickler):
         # save the current implementation of the module
         doDel = obj.__name__ not in sys.modules
         pickledModuleName = self._saveMangledModuleName(obj.__name__)
+        try:
+            objPackage = obj.__package__
+        except AttributeError:
+            pass
+        else:
+            self._saveMangledModuleName(objPackage)
+            
         if doDel or not reload:
             self.save(restore_modules_entry)
             self.write(pickle.TRUE if doDel else pickle.FALSE)

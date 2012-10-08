@@ -456,7 +456,7 @@ class PickelingTest(TestCase):
 
     class MangleModuleName(object):
         """Add a prefix to certain module names"""
-        def __init__(self, start, prefix):
+        def __init__(self, start, prefix, package=None):
             """
             Create a MangleModuleName
             
@@ -466,11 +466,12 @@ class PickelingTest(TestCase):
             """
             self.start = start
             self.prefix = prefix
+            self.package = package
         def __call__(self, pickler, name):
             """
             A sPickle.Pickler mangleModuleName functor
             """
-            if isinstance(name, str) and name.startswith(self.start):
+            if isinstance(name, str) and (name.startswith(self.start) or name == self.package):
                 prefix = self.prefix
                 class ReplacedModuleName(object):
                     def __reduce__(self):
@@ -479,17 +480,23 @@ class PickelingTest(TestCase):
             return name
         def getMangledName(self, name):
             """Unit test helper function"""
-            if isinstance(name, str) and name.startswith(self.start):
+            if isinstance(name, str) and (name.startswith(self.start) or name == self.package):
                 return self.prefix + name
             return name
 
     def testWfModule_MangleModuleName(self):
         orig = wf_module
         self.assertTrue(orig.__name__ in sys.modules)
-        mmn = self.MangleModuleName(orig.__name__[:-2], "renamed_")
+        self.assertIsInstance(orig.__package__, str)
+        package = orig.__name__.rpartition('.')[0]
+        mmn = self.MangleModuleName(package + ".wf_mod", "renamed_", package=package)
         self.assertFalse(mmn.getMangledName(orig.__name__) in sys.modules)
+
         obj, tif = self.wfModuleTest(orig, mangleModuleName=mmn, dis=False)
+
         self.assertTrue(obj is tif.post_modules[mmn.getMangledName(orig.__name__)])
+        self.assertIsInstance(obj.__package__, str)
+        self.assertEqual(obj.__package__, mmn.getMangledName(orig.__package__))
 
     def testWfModuleU_MangleModuleName(self):
         orig = wf_module
@@ -565,7 +572,7 @@ class PickelingTest(TestCase):
                 post = dict(tif.post_modules)
                 for k in tif.pre_modules.keys():
                     mangled = mangleModuleName.getMangledName(k)
-                    if mangled != k:
+                    if mangled != k and k != mangleModuleName.package:
                         del post[mangled]
                 self.assertEqual(tif.pre_modules, post)
             
