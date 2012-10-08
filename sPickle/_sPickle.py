@@ -1547,6 +1547,25 @@ class SPickleTools(object):
             return result.pop()
         return result
 
+    class __Reducer(object):
+        __slots__ = ("rv")
+        def __init__(self, rv):
+            self.rv = rv
+        def __reduce__(self):
+            return self.rv
+
+    @classmethod
+    def reducer(cls, *args):
+        """
+        Get an object with a method __reduce__.
+
+        This method creates an object that has a custom method __reduce__.
+        The __reduce__ method returns the given arguments when called.
+
+        This method can be used to implement complex __reduce__ method that
+        need more than one function call on unpickling.
+        """
+        return cls.__Reducer(args)
 
 class StacklessTaskletReturnValueException(BaseException):
     """This exception can be used to return a value from a Stackless Python tasklet.

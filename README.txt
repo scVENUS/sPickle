@@ -76,7 +76,7 @@ Changes
 
 Version 0.0.x
 -------------
-2012-10-07
+2012-10-08
 Support pickling of cStringIO objects.
 Fixed pickling of recursive collections.OrderedDict objects
 Support pickling of <type 'cell'> type objects
@@ -85,7 +85,9 @@ Replaced REDUCE __import__ ... with GLOBAL. Now GLOBAL is used for all imports.
 This change makes it possible to get all imported modules
 using SPickleTools.getImportList().
 
-Added an option to change the module name(s) of pickled objects, if the
+Enhancements: the new utility method SPickleTools.reducer() simplifies
+the implementation of complex __reduce__ methods.
+I Added an option to change the module name(s) of pickled objects, if the
 respective module is pickled by value.
 
 Version 0.0.8

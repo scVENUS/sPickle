@@ -1284,6 +1284,19 @@ class SPickleToolsTest(TestCase):
         self.assertIs(pt.module_for_globals(pt.module_for_globals), _sPickle)
         self.assertIs(pt.module_for_globals(pt.module_for_globals, withDefiningModules=True), _sPickle)
 
+    def testReducer(self):
+        rvOrig = (1,2,3,4,5)
+        reducer = _sPickle.SPickleTools.reducer(*rvOrig)
+        self.assertIsInstance(reducer, object)
+        rv = reducer.__reduce__()
+        self.assertTupleEqual(rv, rvOrig)
+
+        pickler = _sPickle.SPickleTools()
+        p = pickler.dumps(_sPickle.SPickleTools.reducer(operator.add, (1,2)))
+        obj = pickler.loads(p)
+        self.assertIsInstance(obj, int)
+        self.assertEqual(obj, 3)
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
