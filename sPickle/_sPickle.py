@@ -1331,7 +1331,7 @@ class SPickleTools(object):
                 return c
         return p
         
-    def dumps_with_external_ids(self, obj, idmap, matchResources=False, matchNetref=False, **kw):
+    def dumps_with_external_ids(self, obj, idmap, matchResources=False, matchNetref=False, additionalResourceObjects=(), **kw):
         """
         Pickle an object, that references objects that can't be pickled.
         
@@ -1352,6 +1352,8 @@ class SPickleTools(object):
         :param object matchResources: if true in a boolean context, replace resource objects. 
         :param object matchNetref: if true in a boolean context, replace RPyC proxies (technically 
                             objects of class :class:`rpyc.core.netref.BaseNetref`).
+        :param additionalResourceObjects: a collection of objects that encapsulate some kind of resource and
+                            must be replaced by an RPyC proxy.
         :param kw: other keyword arguments that are passed on to :meth:`dumps`.
         """
         def persistent_id(obj):
@@ -1360,13 +1362,14 @@ class SPickleTools(object):
                 return oid
             isResource = matchResources and isinstance(obj, RESOURCE_TYPES)
             isNetRef = matchNetref and isRpycProxy(obj)
-            if isResource or isNetRef:
+            if isResource or isNetRef or obj in additionalResourceObjects:
                 if isNetRef:
                     objrepr = "RPyC Netref"
-                try:
-                    objrepr = repr(obj)
-                except Exception:
-                    objrepr = "-- repr failed --"
+                else:
+                    try:
+                        objrepr = repr(obj)
+                    except Exception:
+                        objrepr = "-- repr failed --"
                 LOGGER().debug("Pickling object %s of type %r using persistent id %d", objrepr, type(obj), oid)
                 idmap[oid] = obj
                 return oid
@@ -1376,7 +1379,7 @@ class SPickleTools(object):
         return pickle
     
     @classmethod
-    def loads_with_external_ids(cls, str, idmap):
+    def loads_with_external_ids(cls, str, idmap, useCPickle=True):
         """
         Unpickle an object from a string.
         
@@ -1387,6 +1390,9 @@ class SPickleTools(object):
         :type str: :class:`str`
         :param idmap: the mapping, that contains the objects for the id values used in the pickle
         :type idmap: dict
+        :param object useCPickle: if True in a boolean context, use the Unpickler from the 
+                           module :mod:`cPickle`. Otherwise use the much slower Unpickler from 
+                           the module :mod:`pickle`.
         :return: the reconstructed object
         :rtype: object
         """ 
@@ -1395,7 +1401,7 @@ class SPickleTools(object):
                 return idmap[oid]
             except KeyError:
                 raise cPickle.UnpicklingError("Invalid id %r" % (oid,))
-        return cls.loads(str, persistent_load)
+        return cls.loads(str, persistent_load, useCPickle=useCPickle)
     
     @classmethod
     def loads(cls, str, persistent_load=None, useCPickle=True):
@@ -1470,7 +1476,7 @@ class SPickleTools(object):
     The actual value is `False`.
     """
 
-    def remotemethod(self, rpycconnection, method=None, create_only_once=None):
+    def remotemethod(self, rpycconnection, method=None, create_only_once=None, additionalResourceObjects=()):
         """Create a remote function.
         
         This method takes an active RPyC connection and 
@@ -1497,6 +1503,8 @@ class SPickleTools(object):
             Otherwise, if you set create_only_once evaluates to `False`, 
             the local proxy creates the create the remote 
             function on every invocation.
+        :param additionalResourceObjects: a collection of objects that encapsulate some kind of resource and
+                            must be replaced by an RPyC proxy.
 
         :return: the proxy for the remote function
         
@@ -1508,10 +1516,11 @@ class SPickleTools(object):
            
         """
         if method is None:
-            return functools.partial(self.remotemethod, rpycconnection, create_only_once=create_only_once)
+            return functools.partial(self.remotemethod, rpycconnection, 
+                                     create_only_once=create_only_once, additionalResourceObjects=additionalResourceObjects)
 
         if create_only_once == self.CREATE_IMMEDIATELY:
-            rmethod_list = (self._build_remotemethod(rpycconnection, method),)
+            rmethod_list = (self._build_remotemethod(rpycconnection, method, additionalResourceObjects=additionalResourceObjects),)
         else:
             rmethod_list = [bool(create_only_once)]
 
@@ -1523,7 +1532,7 @@ class SPickleTools(object):
             if callable(rmethod_list[0]):
                 rmethod = rmethod_list[0]
             else:
-                rmethod = self._build_remotemethod(rpycconnection, method)
+                rmethod = self._build_remotemethod(rpycconnection, method, additionalResourceObjects=additionalResourceObjects)
                 if rmethod_list[0] is True:
                     rmethod_list[0] = rmethod
 
@@ -1536,10 +1545,10 @@ class SPickleTools(object):
         functools.update_wrapper(wrapper, method)
         return wrapper
                 
-    def _build_remotemethod(self, rpycconnection, method):
+    def _build_remotemethod(self, rpycconnection, method, additionalResourceObjects=()):
         """return a remote method"""
         idmap = {}
-        pickle = self.dumps_with_external_ids(method, idmap, matchResources=True)
+        pickle = self.dumps_with_external_ids(method, idmap, matchResources=True, additionalResourceObjects=additionalResourceObjects)
         try:
             rcls = rpycconnection.root.getmodule(self.__class__.__module__)
             rcls = getattr(rcls, self.__class__.__name__)
@@ -1569,7 +1578,7 @@ class SPickleTools(object):
         """
         Get the module associated with a callable or a module dictionary.
 
-        If you pickle a module, make sure to keep a reference to unpickled module.
+        If you pickle a module, make sure to keep a reference to the unpickled module.
         Otherwise the destruction of the module will clear the modules 
         dictionary. Usually, the sPickle code for serializing modules, preserves 
         a reference to modules created from a pickle but not imported into 

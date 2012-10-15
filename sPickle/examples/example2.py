@@ -38,6 +38,8 @@ import sPickle
 import rpyc_over_ssh
 
 import logging
+
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -73,9 +75,17 @@ def doit(connection):
     
     # This function encapsulates the operations to be performed on the 
     # remote side.
-    remoteLogger = logging.getLogger("remoteLogger")
     
-    @pt.remotemethod(connection, create_only_once=True)
+    remoteLogger = logging.getLogger("remoteLogger")
+    additionalResources=(
+                         # for production, you want to uncomment the next line, because
+                         # you get a much better performance, if the logger is an RPyC 
+                         # proxy instead of the log-file
+                         
+                         #remoteLogger,
+                         )
+    @pt.remotemethod(connection, create_only_once=True, additionalResourceObjects=additionalResources)
+    
     def remote_function(param1, param2):
         remoteLogger.info("Running on Host %r, PID %d", socket.gethostname(), os.getpid())
         remoteLogger.info("Starting function with parameters: %r, %r", param1, param2)

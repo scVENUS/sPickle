@@ -76,7 +76,7 @@ Changes
 
 Version 0.0.x
 -------------
-2012-10-08
+2012-10-15
 Support pickling of cStringIO objects.
 Fixed pickling of recursive collections.OrderedDict objects
 Support pickling of <type 'cell'> type objects.
@@ -88,9 +88,10 @@ using SPickleTools.getImportList().
 
 Enhancements: the new utility method SPickleTools.reducer() simplifies
 the implementation of complex __reduce__ methods.
-I Added an option to change the module name(s) of pickled objects, if the
-respective module is pickled by value.
-
+I Added an option to rename the module name of pickled objects.
+The methods sPickle.SPickleTools.dumps_with_external_ids and 
+sPickle.SPickleTools.remotemethod got a new parameter "additionalResourceObjects".
+ 
 Version 0.0.8
 -------------
 2012-07-17
