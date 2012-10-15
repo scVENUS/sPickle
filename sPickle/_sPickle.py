@@ -363,10 +363,12 @@ class Pickler(pickle.Pickler):
           current system.
           
         Experimental feature: the optional argument *mangleModuleName* 
-        must be a callable with two arguments. The first argument is this 
-        pickler, the second the name of module. The callable must return 
-        a pickleable object that unpickles as a string. You can use this 
-        callable to rename modules in the pickle.
+        must be a callable with three arguments. The first argument is this 
+        pickler, the second the name of module and the third is `None` or
+        - if the caller is going to pickle a module reference - the module object.
+        The callable must return a pickleable object that unpickles as a string. 
+        You can use this callable to rename modules in the pickle. For instance
+        you may want to replace "posixpath" by "os.path".
 
         .. note::
         
@@ -808,7 +810,8 @@ class Pickler(pickle.Pickler):
             # probably the type of mod is a strange subclass of module
             return self.save_reduce(getattr, (mod, name), obj=obj)
         
-        write(pickle.GLOBAL + module + '\n' + name + '\n')
+        mangledModule = self.mangleModuleName(module, mod)
+        write(pickle.GLOBAL + mangledModule + '\n' + name + '\n')
         self.memoize(obj)
 
     def save_function(self, obj):
@@ -910,7 +913,7 @@ class Pickler(pickle.Pickler):
 
         self.module_dict_ids[id(obj.__dict__)] = obj
 
-        pickledModuleName = self._saveMangledModuleName(obj.__name__)
+        pickledModuleName = self._saveMangledModuleName(obj.__name__, module=obj)
 
         if not self.mustSerialize(obj):
             # help pickling unimported modules
@@ -977,11 +980,15 @@ class Pickler(pickle.Pickler):
         return True
     
         
-    def _saveMangledModuleName(self, name):
+    def _saveMangledModuleName(self, name, module=None):
         """
         This method takes a module name and eventually replaces the module name with a different object.
         
         :param name: a module name
+        :type name: str
+        :param module: the module object itself, if the caller is going to save the module.
+            Otherwise *module* is `None`. 
+        :type module: :class:`types.ModuleType`
         :returns: the replacement
         
         """
@@ -994,7 +1001,7 @@ class Pickler(pickle.Pickler):
             # already replaced
             return x[1][1]
         
-        mangled = self.mangleModuleName(name)
+        mangled = self.mangleModuleName(name, module)
         if mangled is name:
             # no replacement required
             return mangled
@@ -1010,7 +1017,7 @@ class Pickler(pickle.Pickler):
         assert x is not None and isinstance(x[1], tuple) and 2 == len(x[1]) and x[1][0] is name
         return x[1][1]
     
-    def mangleModuleName(self, name):
+    def mangleModuleName(self, name, module):
         """
         Mangle a module name.
         
@@ -1018,11 +1025,15 @@ class Pickler(pickle.Pickler):
         this method, if it needs to change the module name in the pickle.
         
         :param name: a module name or `None`.
+        :type name: str
+        :param module: the module object itself, if the caller is going to save the module.
+            Otherwise *module* is `None`.
+        :type module: :class:`types.ModuleType` 
         :returns: if a replacement is required, returns the replacement, otherwise returns *name*.
         
         """
         if self.__mangleModuleName is not None:
-            return self.__mangleModuleName(self, name)
+            return self.__mangleModuleName(self, name, module)
         return name
 
     def saveLock(self, obj):
@@ -1281,10 +1292,26 @@ class SPickleTools(object):
                            and returns a compressed version. Otherwise, if doCompress is not
                            callable the function :func:`bz2.compress` is used.
         :param mangleModuleName: Unless mangleModuleName is `None`, it must be a 
-                        callable with 2 arguments: the first receives the pickler, the second the 
-                        module name of the object to be pickled. The callable must return an
+                        callable with 3 arguments: the first receives the pickler, the second the 
+                        module name of the object to be pickled. 
+                        If the caller is going to save a module reference, the third argument is the module.
+                        The callable must return an
                         object to be pickled instead of the module name. This can be a different 
-                        string or a object that gets unpickled as a string. 
+                        string or a object that gets unpickled as a string.
+                        
+                        Example::
+
+                            import os.path
+                            
+                            def mangleOsPath(pickler, name, module)
+                                '''use 'os.path' instead of the platform specific module name'''
+                                if module is os.path:
+                                    return "os.path"
+                                return name
+
+                            spt = SPickleTools()
+                            p = spt.dumps(object_to_be_pickled, mangleModuleName=mangleOsPath)
+
         :return: the pickle, optionally compressed
         :rtype: :class:`str`
         """

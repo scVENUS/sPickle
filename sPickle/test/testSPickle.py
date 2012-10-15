@@ -32,7 +32,7 @@ import thread
 import functools
 # a pure python module used for testing
 import tabnanny
-import os
+import os.path
 import socket
 import collections
 import logging
@@ -469,10 +469,12 @@ class PickelingTest(TestCase):
             self.start = start
             self.prefix = prefix
             self.package = package
-        def __call__(self, pickler, name):
+        def __call__(self, pickler, name, module):
             """
             A sPickle.Pickler mangleModuleName functor
             """
+            if module is os.path:
+                return "os.path"
             if isinstance(name, str) and (name.startswith(self.start) or name == self.package):
                 prefix = self.prefix
                 class ReplacedModuleName(object):
@@ -480,8 +482,10 @@ class PickelingTest(TestCase):
                         return (operator.add, (prefix, name))               
                 return ReplacedModuleName()
             return name
-        def getMangledName(self, name):
+        def getMangledName(self, name, module=None):
             """Unit test helper function"""
+            if module is os.path:
+                return "os.path"
             if isinstance(name, str) and (name.startswith(self.start) or name == self.package):
                 return self.prefix + name
             return name
@@ -537,6 +541,38 @@ class PickelingTest(TestCase):
         mmn = self.MangleModuleName(anonymousWfModule.__name__, "renamed_")
         obj, tif = self.wfModuleTest(anonymousWfModule, mangleModuleName=mmn, preObjects=anonymousWfModule.__dict__, dis=False)
         self.assertFalse(obj.__name__ in tif.post_modules)
+
+    def testOsPath_MangleModuleName(self):
+        orig = os.path
+        self.assertNotEqual(orig.__name__, "os.path")
+        mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__)
+        p = self.dumpWithPreobjects(None, orig, dis=False, 
+                                    mangleModuleName=mmn
+                                    )
+
+        il = self.pickler.getImportList(p)
+        modules = set([i.partition(" ")[0] for i in il])
+        self.assertNotIn(orig.__name__, modules)
+        self.assertIn("os.path", modules)
+        
+        obj = self.pickler.loads(p)[1]
+        self.assertIs(obj, orig)
+
+    def testOsPathJoin_MangleModuleName(self):
+        orig = os.path
+        self.assertNotEqual(orig.__name__, "os.path")
+        mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__)
+        p = self.dumpWithPreobjects(None, orig.join, dis=False, 
+                                    mangleModuleName=mmn
+                                    )
+
+        il = self.pickler.getImportList(p)
+        modules = set([i.partition(" ")[0] for i in il])
+        self.assertNotIn(orig.__name__, modules)
+        self.assertIn("os.path", modules)
+        
+        obj = self.pickler.loads(p)[1]
+        self.assertIs(obj, orig.join)
 
     @skipIf(gtk is None, "gtk not available")
     def testGtk(self):
