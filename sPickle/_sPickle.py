@@ -1476,7 +1476,7 @@ class SPickleTools(object):
     The actual value is `False`.
     """
 
-    def remotemethod(self, rpycconnection, method=None, create_only_once=None, additionalResourceObjects=()):
+    def remotemethod(self, rpycconnection, method=None, create_only_once=None, **kw):
         """Create a remote function.
         
         This method takes an active RPyC connection and 
@@ -1503,8 +1503,7 @@ class SPickleTools(object):
             Otherwise, if you set create_only_once evaluates to `False`, 
             the local proxy creates the create the remote 
             function on every invocation.
-        :param additionalResourceObjects: a collection of objects that encapsulate some kind of resource and
-                            must be replaced by an RPyC proxy.
+        :param kw: other keyword arguments that are passed on to :meth:`dumps_with_external_ids`.
 
         :return: the proxy for the remote function
         
@@ -1517,10 +1516,10 @@ class SPickleTools(object):
         """
         if method is None:
             return functools.partial(self.remotemethod, rpycconnection, 
-                                     create_only_once=create_only_once, additionalResourceObjects=additionalResourceObjects)
+                                     create_only_once=create_only_once, **kw)
 
         if create_only_once == self.CREATE_IMMEDIATELY:
-            rmethod_list = (self._build_remotemethod(rpycconnection, method, additionalResourceObjects=additionalResourceObjects),)
+            rmethod_list = (self._build_remotemethod(rpycconnection, method, **kw),)
         else:
             rmethod_list = [bool(create_only_once)]
 
@@ -1532,7 +1531,7 @@ class SPickleTools(object):
             if callable(rmethod_list[0]):
                 rmethod = rmethod_list[0]
             else:
-                rmethod = self._build_remotemethod(rpycconnection, method, additionalResourceObjects=additionalResourceObjects)
+                rmethod = self._build_remotemethod(rpycconnection, method, **kw)
                 if rmethod_list[0] is True:
                     rmethod_list[0] = rmethod
 
@@ -1545,10 +1544,10 @@ class SPickleTools(object):
         functools.update_wrapper(wrapper, method)
         return wrapper
                 
-    def _build_remotemethod(self, rpycconnection, method, additionalResourceObjects=()):
+    def _build_remotemethod(self, rpycconnection, method, **kw):
         """return a remote method"""
         idmap = {}
-        pickle = self.dumps_with_external_ids(method, idmap, matchResources=True, additionalResourceObjects=additionalResourceObjects)
+        pickle = self.dumps_with_external_ids(method, idmap, matchResources=True, **kw)
         try:
             rcls = rpycconnection.root.getmodule(self.__class__.__module__)
             rcls = getattr(rcls, self.__class__.__name__)
