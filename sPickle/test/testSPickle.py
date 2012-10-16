@@ -294,7 +294,7 @@ class ClassWithHostile__getattribute__(object):
         
         raise Exception("This __getattribute__ always raises an exception: %r" % name)
         
-class PickelingTest(TestCase):
+class PicklingTest(TestCase):
     """
     This is the description of the class WfBaseTest. 
     
