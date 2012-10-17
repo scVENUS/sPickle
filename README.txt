@@ -76,11 +76,12 @@ Changes
 
 Version 0.0.x
 -------------
-2012-10-15
+2012-10-17
 Support pickling of cStringIO objects.
 Fixed pickling of recursive collections.OrderedDict objects
 Support pickling of <type 'cell'> type objects.
 Support pickling of weakref.ReferenceType objects without callback function.
+Fixed pickling of modules with a modified __name__ attribute.
 
 Replaced REDUCE __import__ ... with GLOBAL. Now GLOBAL is used for all imports.
 This change makes it possible to get all imported modules

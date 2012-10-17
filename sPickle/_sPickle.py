@@ -912,13 +912,18 @@ class Pickler(pickle.Pickler):
         write = self.write
 
         self.module_dict_ids[id(obj.__dict__)] = obj
+        obj_name = obj.__name__
+        if obj is not sys.modules.get(obj_name):
+            # either an anonymous module or it did change its __name__
+            for k,v in sys.modules.iteritems():
+                if obj is v:
+                    obj_name = k  
 
-        pickledModuleName = self._saveMangledModuleName(obj.__name__, module=obj)
+        pickledModuleName = self._saveMangledModuleName(obj_name, module=obj)
 
         if not self.mustSerialize(obj):
             # help pickling unimported modules
-            if obj is not sys.modules.get(obj.__name__):
-            # if obj.__name__ not in sys.modules:
+            if obj is not sys.modules.get(obj_name):
                 try:
                     self.save_global(obj)
                     return True
@@ -926,34 +931,23 @@ class Pickler(pickle.Pickler):
                     LOGGER().exception("Can't pickle anonymous module: %r", obj)
                     raise
 
-            # import __name__ from the module. It is always present, because 
-            # obj is a module and we need the name anyway
-            # 
-            # The complete operation is
-            # operator.getitem(sys.modules, Unpickler.find_class(obj.__name__, "__name__"))
-            # (Unpickler.find_class is the implementation of GLOBAL)
             if isinstance(pickledModuleName, str):
-                # static import
-                self.save(operator.getitem)
-                self.save(sys.modules)
-                self.write(pickle.GLOBAL + pickledModuleName + '\n__name__\n')
-                self.write(pickle.TUPLE2)
-                self.write(pickle.REDUCE)
-                self.memoize(obj)
+                # import __dict__ from the module. It is always present, because obj is a module
+                # mod = sys.modules[pickledModuleName]
+                self.write(pickle.GLOBAL + pickledModuleName + '\n__dict__\n')
             else:
                 # dynamic import version of the following code
                 # __import__(pickledModuleName)
                 # mod = sys.modules[pickledModuleName]
                 self.save_reduce(__import__, (pickledModuleName,))
-                self.write(pickle.POP)
-                self.save_reduce(operator.getitem, (sys.modules, pickledModuleName,), obj=obj)
-
+            self.write(pickle.POP)
+            self.save_reduce(operator.getitem, (sys.modules, pickledModuleName,), obj=obj)
             return True
 
         # do it ourself
 
         # save the current implementation of the module
-        doDel = obj.__name__ not in sys.modules
+        doDel = obj_name not in sys.modules
         try:
             objPackage = obj.__package__
         except AttributeError:
@@ -966,7 +960,7 @@ class Pickler(pickle.Pickler):
             self.write(pickle.TRUE if doDel else pickle.FALSE)
             self.save_reduce(save_modules_entry, (pickledModuleName,))
             
-        savedModule = save_modules_entry(obj.__name__)
+        savedModule = save_modules_entry(obj_name)
         try:            
             # create the module
             self.save_reduce(create_module, (type(obj), pickledModuleName, getattr(obj, "__doc__", None)), obj.__dict__, obj=obj)

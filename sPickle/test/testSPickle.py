@@ -253,7 +253,12 @@ class TestImportFunctor(object):
         
         for m in self.modulesToUnimport:
             if isinstance(m, types.ModuleType):
-                m = m.__name__
+                name = m.__name__
+                if m is not sys.modules.get(name):
+                    for k,v in sys.modules.iteritems():
+                        if v is m:
+                            name = k
+                m = name
             if sys.modules.has_key(m):
                 self.unimported.add(sys.modules[m])
                 del sys.modules[m]
@@ -455,6 +460,23 @@ class PicklingTest(TestCase):
         self.assertFalse(anonymousWfModule.__name__ in sys.modules)
         obj, tif = self.wfModuleTest(anonymousWfModule, anonymousWfModule.__dict__)
         self.assertFalse(obj.__name__ in tif.post_modules)
+
+    def testModuleWithWrongName(self):
+        from . import mod_with_wrong_name
+        orig = mod_with_wrong_name
+        self.assertNotIn(orig.__name__, sys.modules)
+        self.assertIn(orig.NAME, sys.modules)
+        obj, tif = self.moduleTest(orig)
+        self.assertNotIn(orig.__name__, tif.post_modules)
+        self.assertIs(obj, tif.post_modules[orig.NAME])
+    def testModuleWithWrongNameU(self):
+        from . import mod_with_wrong_name
+        orig = mod_with_wrong_name
+        self.assertNotIn(orig.__name__, sys.modules)
+        self.assertIn(orig.NAME, sys.modules)
+        obj, tif = self.moduleTest(orig, unimport=True)
+        self.assertNotIn(orig.__name__, tif.post_modules)
+        self.assertIs(obj, tif.post_modules[orig.NAME])
 
     class MangleModuleName(object):
         """Add a prefix to certain module names"""
