@@ -38,6 +38,7 @@ what could be done.
    The sPickle package is currently requires Stackless Python 2.7.
 
 .. autoclass:: Pickler
+   :members: analysePicklerStack
 
 .. autoclass:: SPickleTools
    :members:

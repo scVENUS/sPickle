@@ -1215,41 +1215,140 @@ class Pickler(pickle.Pickler):
             # use an new object.
             self.save_reduce(weakref.ref, (collections.OrderedDict(),), obj=obj)
 
+    ANALYSE_OBJECT_KEY="OBJECT"
+    ANALYSE_MEMO_KEY="MEMO"
+    ANALYSE_DICT_OF_KEY="DICT_OF"
 
-    def _dumpSaveStack(self):
-        from inspect import currentframe
-        from pprint import pformat
-        fr = currentframe()
-        obj = None
+    @classmethod
+    def analysePicklerStack(cls, traceback_or_frame, stopObjectId=None):
+        """
+        Analyse the stack of a :class:`Pickler`.
+
+        This method creates a list of dictionaries, one for each
+        object currently being serialised. (That is, objects already serialised or
+        objects not yet started are not in this list.)
+        The first list item represents the object whose processing started last,
+        the last entry represents the object whose processing started first.
+        The pickler reorders the sequence of of objects to be pickled if required.
+        Therefore it is not guaranteed that the last list item represents the
+        object, that was initially given to the pickler.
+
+        Possible entries of the dictionaries in the
+        returned list are
+
+        Key :attr:`ANALYSE_OBJECT_KEY`
+           the object to be pickled. This item is always present.
+
+        Key :attr:`ANALYSE_MEMO_KEY`
+           This item is present, if the object to be pickled is the __dict__ attribute of a another
+           object. The value is the object, that has the __dict__ attribute.
+
+        Key :attr:`ANALYSE_DICT_OF_KEY`
+           If the object to be pickled has already been added to the memo,
+           the value of this item is the memo key.
+
+        :param traceback_or_frame: a traceback object or a frame object. In case of
+           a traceback object, the method follows the chain of traceback objects and
+           extracts the innermost frame object.
+        :type traceback_or_frame: :class:`types.TracebackType` or `types.FrameType`
+        :param stopObjectId: the id of the top most object, the caller is interested in.
+           If this method encounters an object with the given id, it stops building
+           the result list.
+        :type stopObjectId: int
+
+        :returns: a list of dictionaries
+        :rtype: :class:`list`
+
+        """
         try:
+            # 1. get the rigt frame
+            fr1 = traceback_or_frame
+            if isinstance(traceback_or_frame, types.TracebackType):
+                while fr1.tb_next is not None:
+                    fr1 = fr1.tb_next
+                fr1 = fr1.tb_frame
+            # 2. locate the pickler object
+            pickler = None
+            fr = fr1
+            while pickler is None and fr is not None:
+                try:
+                    obj = fr.f_locals['__object_to_be_pickled__']
+                except Exception:
+                    pass
+                else:
+                    pickler = fr.f_locals['self']
+                    assert isinstance(pickler, Pickler)
+                fr = fr.f_back
+            if not isinstance(pickler, Pickler):
+                return []
+            # 3. build the object list
+            l = []
+            fr = fr1
             while fr is not None:
                 try:
                     obj = fr.f_locals['__object_to_be_pickled__']
                 except Exception:
                     pass
                 else:
-                    try:
-                        s = pformat(obj, depth=3)
-                    except Exception:
-                        try:
-                            s = repr(obj)
-                        except Exception:
-                            s = "<NO REPRESENTATION AVAILABLE>"
-                    try:
-                        t = str(type(obj))
-                    except Exception:
-                        t = "<NO REPRESENTATION AVAILABLE>"
-                        
+                    d = {cls.ANALYSE_OBJECT_KEY : obj}
+                    l.append(d)
+
+                    # MEMO_KEY
                     i = id(obj)
                     try:
-                        m = self.memo[i][0]
+                        m = pickler.memo[i][0]
                     except Exception:
-                        m = "n.a."
+                        pass
+                    else:
+                        d[cls.ANALYSE_MEMO_KEY] = m
                         
-                    LOGGER().info("Thing to be pickled id=%d, memo-key=%s, type=%s: %s" % (i, m, t, s))
+                    # DICT_OF
+                    # First test for a module dict,
+                    # then for other objects
+                    try:
+                        m = pickler.module_dict_ids[i]
+                    except Exception:
+                        try:
+                            m = pickler.object_dict_ids[i]
+                        except Exception:
+                            pass
+                        else:
+                            d[cls.ANALYSE_DICT_OF_KEY] = m
+                    else:
+                        d[cls.ANALYSE_DICT_OF_KEY] = m
+                        
+                    if id(obj) == stopObjectId:
+                        break
                 fr = fr.f_back
+
+            return l
         finally:
-            del fr
+            # Don't keep any references to frames around
+            # in case of an exception
+            traceback_or_frame = None
+            fr1 = fr = None
+            pickler = None
+
+    def _dumpSaveStack(self):
+        from inspect import currentframe
+        from pprint import pformat
+        for d in self.analysePicklerStack(currentframe()):
+            obj = d[self.ANALYSE_OBJECT_KEY]
+            i = id(obj)
+            try:
+                s = pformat(obj, depth=3)
+            except Exception:
+                try:
+                    s = repr(obj)
+                except Exception:
+                    s = "<NO REPRESENTATION AVAILABLE>"
+            try:
+                t = str(type(obj))
+            except Exception:
+                t = "<NO REPRESENTATION AVAILABLE>"
+
+            m = d.get(self.ANALYSE_MEMO_KEY, "n.a.")
+            LOGGER().info("Thing to be pickled id=%d, memo-key=%s, type=%s: %s" % (i, m, t, s))
 
         
 class SPickleTools(object):

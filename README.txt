@@ -76,7 +76,7 @@ Changes
 
 Version 0.0.x
 -------------
-2012-10-17
+2012-10-19
 Support pickling of cStringIO objects.
 Fixed pickling of recursive collections.OrderedDict objects
 Support pickling of <type 'cell'> type objects.
@@ -87,12 +87,16 @@ Replaced REDUCE __import__ ... with GLOBAL. Now GLOBAL is used for all imports.
 This change makes it possible to get all imported modules
 using SPickleTools.getImportList().
 
-Enhancements: the new utility method SPickleTools.reducer() simplifies
-the implementation of complex __reduce__ methods.
-I Added an option to rename the module name of pickled objects.
-The methods sPickle.SPickleTools.dumps_with_external_ids and 
-sPickle.SPickleTools.remotemethod got a new parameter "additionalResourceObjects".
- 
+Enhancements: 
+- The new utility method SPickleTools.reducer() simplifies
+  the implementation of complex __reduce__ methods.
+- I Added an option to rename the module name of pickled objects.
+- The methods dumps, dumps_with_external_ids and 
+  remotemethod of class SPickleTools got new parameters.
+- The class Pickler got a new method analysePicklerStack. It can
+  be used to extract information about the Pickler state from 
+  the stack or from a traceback.
+
 Version 0.0.8
 -------------
 2012-07-17
