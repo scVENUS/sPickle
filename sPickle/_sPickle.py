@@ -1271,16 +1271,20 @@ class SPickleTools(object):
             serializeableModules = []
         self.serializeableModules = serializeableModules
         
-    def dumps(self, obj, persistent_id = None, doCompress=True, mangleModuleName=None):
+    def dumps(self, obj, persistent_id = None, persistent_id_method = None, doCompress=True, mangleModuleName=None):
         """Pickle an object and return the pickle
         
         This method works similar to the regular dumps method, but
         also optimizes and optionally compresses the pickle.
         
         :param object obj: object to be pickled
-        :param persistent_id: the persistent_id function for the pickler.
+        :param persistent_id: the persistent_id function (or another callable) for the pickler.
+                              The function is called with a single positional argument, and must
+                              return `None`or the persistent id for its argument.
                               See the section "Pickling and unpickling external objects" of the 
                               documentation of module :mod:`Pickle`.
+        :param persistent_id_method: a variant of the persistent_id function, that takes the
+                              pickler object as its first argument and an object as its second argument.
         :param doCompress: If doCompress yields `True` in a boolean context, the 
                            pickle will be compressed, if the compression actually 
                            reduces the size of the pickle. The compression method depends
@@ -1315,8 +1319,12 @@ class SPickleTools(object):
         """
         l = []
         pickler = Pickler(l, 2, serializeableModules=self.serializeableModules, mangleModuleName=mangleModuleName)
+        if persistent_id is not None and persistent_id_method is not None:
+            raise ValueError("At least one of persistent_id and persistent_id_method must be None")
         if persistent_id is not None:
             pickler.persistent_id = persistent_id
+        if persistent_id_method is not None:
+            pickler.persistent_id = types.MethodType(persistent_id_method, pickler, type(pickler))
         pickler.dump(obj)
         p = pickletools.optimize("".join(l))
         if doCompress:
