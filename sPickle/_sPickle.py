@@ -446,6 +446,8 @@ class Pickler(pickle.Pickler):
         except Exception:
             pass # Attribute is not present
         
+        f = getattr(obj, "__file__", None)
+        f = os.path.normcase(os.path.normpath(f)) if f else False
         for item in self.serializeableModules:
             if obj is item:
                 break
@@ -453,9 +455,8 @@ class Pickler(pickle.Pickler):
                 if obj.__name__ and obj.__name__.startswith(item):
                     break
                 else:
-                    f = getattr(obj, "__file__", None)
                     if ( f and 
-                         os.path.normcase(os.path.normpath(item)) in os.path.normcase(os.path.normpath(f)) ):
+                         os.path.normcase(os.path.normpath(item)) in f ):
                         break
         else:
             return False
@@ -502,7 +503,10 @@ class Pickler(pickle.Pickler):
                 method(obj, *args, **kw)
                 done = True
             except ObjectAlreadyPickledError, e:
+                # the object, that must be pickled now. In case of a module
+                # it holds a reference to its dictionary. Therefore the name "holder"
                 holder = e.holder
+                # the memo id of the object, that must be pickled after holder
                 memoid = e.memoid
                 assert currentSave is not holder
                 if memo[memoid][0] < memoPos:
@@ -626,14 +630,14 @@ class Pickler(pickle.Pickler):
     def memoize(self, obj):
         """Store an object in the memo."""
         try:
-            objDict = getattr(obj, "__dict__", None)
+            objDict = obj.__dict__
         except Exception:
-            objDict = None
-        if isinstance(objDict, types.DictType):
-            dictId = id(objDict)
-            # x = self.memo.get(dictId)
-            
-            self.object_dict_ids[dictId] = obj
+            pass
+        else:
+            if isinstance(objDict, types.DictType):
+                dictId = id(objDict)
+                # x = self.memo.get(dictId)
+                self.object_dict_ids[dictId] = obj
 
         if id(obj) in self.memo:
             m = self.memo[id(obj)]
