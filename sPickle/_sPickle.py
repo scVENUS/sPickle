@@ -825,7 +825,7 @@ class Pickler(pickle.Pickler):
         try:
             return self.save_global(obj)
         except pickle.PicklingError, e:
-            LOGGER().debug("Going to pickle function %r by value, because it can't be pickled as global: %r", obj, e)
+            LOGGER().debug("Going to pickle function %r by value, because it can't be pickled as global: %s", obj, str(e))
             del self.writeList[writePos:]
             for k in memo.keys():
                 v= memo[k]
@@ -1270,61 +1270,69 @@ class Pickler(pickle.Pickler):
             # 2. locate the pickler object
             pickler = None
             fr = fr1
+            savecode = cls.save.im_func.func_code
+            dumpcode = cls.dump.im_func.func_code
+
+            # A note abaout stack analysis: it is important not to access
+            # frame.f_locals unless absolutely necessary. Accessing f_locals creates a 
+            # new dictionary and this dictionary belongs to a frame at a higher stack level
+            # This could create reference cycles. Therefore we test the code object prior 
+            # to find the right frames.
             while pickler is None and fr is not None:
-                try:
-                    obj = fr.f_locals['__object_to_be_pickled__']
-                except Exception:
-                    pass
-                else:
+                if fr.f_code is dumpcode:
                     pickler = fr.f_locals['self']
                     assert isinstance(pickler, Pickler)
                 fr = fr.f_back
+            if pickler is None:
+                raise ValueError("traceback_or_frame does not belong to a sPickle.Pickler stack")
+
             if not isinstance(pickler, Pickler):
                 return []
             # 3. build the object list
             l = []
             fr = fr1
-            while fr is not None:
-                try:
-                    obj = fr.f_locals['__object_to_be_pickled__']
-                except Exception:
-                    pass
-                else:
-                    d = {cls.ANALYSE_OBJECT_KEY : obj}
-                    l.append(d)
-
-                    # MEMO_KEY
-                    i = id(obj)
+            while fr is not None and fr.f_code is not dumpcode:
+                if fr.f_code is savecode:
                     try:
-                        m = pickler.memo[i][0]
+                        obj = fr.f_locals['__object_to_be_pickled__']
                     except Exception:
                         pass
                     else:
-                        d[cls.ANALYSE_MEMO_KEY] = m
+                        d = {cls.ANALYSE_OBJECT_KEY : obj}
+                        l.append(d)
                         
-                    # DICT_OF
-                    # First test for a module dict,
-                    # then for other objects
-                    try:
-                        m = pickler.module_dict_ids[i]
-                    except Exception:
+                        # MEMO_KEY
+                        i = id(obj)
                         try:
-                            m = pickler.object_dict_ids[i]
+                            m = pickler.memo[i][0]
                         except Exception:
                             pass
                         else:
-                            d[cls.ANALYSE_DICT_OF_KEY] = m
-                    else:
-                        d[cls.ANALYSE_DICT_OF_KEY] = m
-                        
-                    if id(obj) == stopObjectId:
-                        break
-                fr = fr.f_back
+                            d[cls.ANALYSE_MEMO_KEY] = m
 
+                        # DICT_OF
+                        # First test for a module dict,
+                        # then for other objects
+                        try:
+                            m = pickler.module_dict_ids[i]
+                        except Exception:
+                            try:
+                                m = pickler.object_dict_ids[i]
+                            except Exception:
+                                pass
+                            else:
+                                d[cls.ANALYSE_DICT_OF_KEY] = m
+                        else:
+                            d[cls.ANALYSE_DICT_OF_KEY] = m
+                        
+                        if id(obj) == stopObjectId:
+                            break
+                fr = fr.f_back
             return l
         finally:
             # Don't keep any references to frames around
             # in case of an exception
+            obj = m = d = l = None
             traceback_or_frame = None
             fr1 = fr = None
             pickler = None
