@@ -426,6 +426,7 @@ class Pickler(pickle.Pickler):
         self.dispatch[CSTRINGIO_INPUT_TYPE] = self.saveCStringIoInput.__func__
         self.dispatch[collections.OrderedDict] = self.saveOrderedDict.__func__
         self.dispatch[weakref.ReferenceType] = self.saveWeakref.__func__
+        self.dispatch[super] = self.saveSuper.__func__
 
         # auxiliary classes
         self.dispatch[self._ObjReplacementContainer] = self.save_ObjReplacementContainer.__func__
@@ -1214,6 +1215,9 @@ class Pickler(pickle.Pickler):
         else:
             # use an new object.
             self.save_reduce(weakref.ref, (collections.OrderedDict(),), obj=obj)
+
+    def saveSuper(self, obj):
+        return self.save_reduce(super, (obj.__thisclass__, obj.__self__), obj=obj)
 
     ANALYSE_OBJECT_KEY="OBJECT"
     ANALYSE_MEMO_KEY="MEMO"

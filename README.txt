@@ -82,6 +82,7 @@ Fixed pickling of recursive collections.OrderedDict objects
 Support pickling of <type 'cell'> type objects.
 Support pickling of weakref.ReferenceType objects without callback function.
 Fixed pickling of modules with a modified __name__ attribute.
+Support pickling of super objects.
 
 Replaced REDUCE __import__ ... with GLOBAL. Now GLOBAL is used for all imports.
 This change makes it possible to get all imported modules

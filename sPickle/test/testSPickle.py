@@ -117,6 +117,9 @@ class PlainClass(object):
     def isOk(self):
         return self.state == "OK"
     
+class PlainSubClass(PlainClass):
+    pass
+    
 class PlainClassicClass:
     def __init__(self, state = None):
         self.state = state 
@@ -1223,6 +1226,56 @@ class PicklingTest(TestCase):
         self.assertIsNot(obj, orig)
         self.assertIsInstance(obj, type(orig))
         self.assertIsNone(obj())
+
+    def testTypeSuper(self):
+        orig = super
+        self.assertIs(orig, type(super(PlainClass)))
+        self.assertIs(orig, type(super(PlainClass, PlainClass())))
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testSuperUnbound(self):
+        orig = super(PlainClass)
+        self.assertIsNone(orig.__self__)
+        self.assertIsNone(orig.__self_class__)
+        self.assertIs(orig.__thisclass__, PlainClass)
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertIs(obj.__thisclass__, orig.__thisclass__)
+        self.assertIsNone(obj.__self__)
+        self.assertIsNone(obj.__self_class__)
+
+    def testSuperBoundObj(self):
+        p = PlainSubClass()
+        orig = super(PlainClass, p)
+        self.assertIs(orig.__self__, p)
+        self.assertIs(orig.__thisclass__, PlainClass)
+        self.assertIs(orig.__self_class__, PlainSubClass)
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertIs(obj.__thisclass__, orig.__thisclass__)
+        self.assertIsNot(obj.__self__, p)
+        self.assertIs(type(obj.__self__), PlainSubClass)
+        self.assertIs(obj.__self_class__, PlainSubClass)
+
+    def testSuperBoundCls(self):
+        orig = super(PlainClass, PlainSubClass)
+        self.assertIs(orig.__self__, PlainSubClass)
+        self.assertIs(orig.__thisclass__, PlainClass)
+        self.assertIs(orig.__self_class__, PlainSubClass)
+        p = self.dumpWithPreobjects(None, orig)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, type(orig))
+        self.assertIs(obj.__thisclass__, orig.__thisclass__)
+        self.assertIs(obj.__self__, PlainSubClass)
+        self.assertIs(obj.__self_class__, PlainSubClass)
+
 
     # Tests for pickling classes
     
