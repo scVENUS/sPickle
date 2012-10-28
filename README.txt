@@ -1,8 +1,8 @@
 About sPickle
 =============
 
-sPickle is an advanced (and experimental) Pickler for Stackless Python. 
-The code was developed as part of a commercial project and released as free
+sPickle is an advanced (and experimental) Pickler for Python. The code
+was developed as part of a commercial project and released as free
 software under the Apache 2.0 License by science + computing ag. The 
 software is copyrighted by science + computing ag.
 
@@ -17,8 +17,7 @@ Requirements
 * Stackless Python 2.7
 * RPyC is used in the unit tests
 
-(Sorry, no Python 3 support and no support for conventional Python. I'll 
-happily accept patches.)  
+(Sorry, no Python 3 support. I'll happily accept patches.)  
  
 
 Installation
