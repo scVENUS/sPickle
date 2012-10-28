@@ -62,7 +62,7 @@ Git repository: git://github.com/akruis/sPickle.git
           "Programming Language :: Python :: 2.7",
           "Environment :: Other Environment",
           "Operating System :: OS Independent",
-          "Development Status :: 3 - Alpha", # hasn't been tested outside of flowGuide2
+          "Development Status :: 4 - Beta", # hasn't been tested outside of flowGuide2
           "Intended Audience :: Developers",
           "Topic :: Software Development :: Libraries :: Python Modules",
       ],
