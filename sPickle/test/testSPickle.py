@@ -782,7 +782,21 @@ class PicklingTest(TestCase):
         
 
     # Tests for special objects and types
-    
+    def testTypeWrapperDescriptor(self):
+        p = self.pickler.dumps(_sPickle.WRAPPER_DESCRIPTOR_TYPE)
+        obj = self.pickler.loads(p)
+        self.assertIs(obj, _sPickle.WRAPPER_DESCRIPTOR_TYPE)
+
+    def testTypeMethodDescriptor(self):
+        p = self.pickler.dumps(_sPickle.METHOD_DESCRIPTOR_TYPE)
+        obj = self.pickler.loads(p)
+        self.assertIs(obj, _sPickle.METHOD_DESCRIPTOR_TYPE)
+
+    def testTypeMethodWrapper(self):
+        p = self.pickler.dumps(_sPickle.METHOD_WRAPPER_TYPE)
+        obj = self.pickler.loads(p)
+        self.assertIs(obj, _sPickle.METHOD_WRAPPER_TYPE)
+
     def testDictSysModules(self):
         p = self.pickler.dumps(sys.modules)
         obj = self.pickler.loads(p)
