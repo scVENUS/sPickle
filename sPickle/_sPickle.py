@@ -883,7 +883,14 @@ class Pickler(pickle.Pickler):
             if k in ('__doc__', '__slots__'):
                 d1[k] = v
                 continue
-            if k in ('__dict__', '__class__' ):
+            if k == '__class__':
+                continue
+            if k == '__dict__':
+                # check if this __dict__ is the normal dict. It is created automatically
+                # If so, we do not need to recreate it. Otherwise we need to create it
+                if not(isinstance(v, types.GetSetDescriptorType) and v.__name__ == k and v.__objclass__ is obj):
+                    # not the normal __dict__. preserve it
+                    d1[k] = v
                 continue
             if type(v) in (types.GetSetDescriptorType, types.MemberDescriptorType):
                 if v.__name__ == k and v.__objclass__ is obj:

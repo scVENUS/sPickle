@@ -1323,7 +1323,13 @@ class PicklingTest(TestCase):
         self.assertTupleEqual(nt, (1,2))
         self.assertEqual(nt.a, 1)
         self.assertEqual(nt.b, 2)
-        
+
+    def testClassWithCustomDict(self):
+        class C(object):
+            __dict__ = 4711
+        cls = self.classCopyTest(C, dis=False)
+        self.assertEquals(cls().__dict__, 4711)
+
     def testExceptionClass(self):
         class TestException(BaseException):
             attribute = "attribute value"
