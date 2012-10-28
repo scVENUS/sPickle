@@ -28,6 +28,7 @@ import collections
 import operator
 import functools
 import inspect
+import copy_reg
 
 #saved_dispatch = pickle.Pickler.dispatch.copy()
 #saved_dispatch_table = pickle.dispatch_table.copy()
@@ -46,7 +47,11 @@ import tempfile
 import codecs
 import weakref
 
-from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
+try:
+    from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
+except ImportError:
+    class STACKLESS_FUNCTION_WRAPPER(object):
+        pass
 
 try:
     _trace_memo_entries = [ int(i) for i in os.environ["SPICKLE_TRACE_MEMO_ENTRIES"].split() ]
@@ -408,6 +413,9 @@ class Pickler(pickle.Pickler):
             f = getattr(Pickler, pickle.Pickler.dispatch[k].__name__, None)
             if f.__func__ is not pickle.Pickler.dispatch[k]:
                 self.dispatch[k] = f.__func__
+        self.dispatch[types.FunctionType] = self.save_function.__func__
+        self.dispatch[types.CodeType] = self.saveCode.__func__
+        self.dispatch[CELL_TYPE] = self.saveCell.__func__
         self.dispatch[thread.LockType] = self.saveLock.__func__
         self.dispatch[types.FileType] = self.saveFile.__func__
         self.dispatch[socket.SocketType] = self.saveSocket.__func__
@@ -431,9 +439,22 @@ class Pickler(pickle.Pickler):
         # auxiliary classes
         self.dispatch[self._ObjReplacementContainer] = self.save_ObjReplacementContainer.__func__
 
-        # initiallize the module_dict_ids module dict lookup table
-        # this stackless specific call creates the dict self.module_dict_ids
-        self._pickle_moduledict(self, {})
+        # Stackless Python has a special variant of the module pickle.py.
+        # This variant add the method _pickle_moduledict. The method is used 
+        # to pickle the dictionary of a module.
+        # On the first call it creates the dictionary self.module_dict_ids
+        # Here we call this method to enforce the creation of self.module_dict_ids
+        try:
+            f = self._pickle_moduledict
+        except AttributeError:
+            # not stackless python
+            self.module_dict_ids = ids = {}
+            for m in sys.modules.itervalues():
+                if isinstance(m, types.ModuleType):
+                    ids[id(m.__dict__)] = m
+        else:
+            f(self, {})
+
         self.object_dict_ids = {}
         
         # Used for class creation
@@ -569,11 +590,11 @@ class Pickler(pickle.Pickler):
                     obj.f_trace = trace_func
                     
         if obj is WRAPPER_DESCRIPTOR_TYPE:
-            return self.save_reduce(type, (object.__getattribute__,), obj=obj)
+            return self.save_reduce(type, (SPickleTools.reducer(getattr, (object, "__getattribute__")), ), obj=obj)
         if obj is METHOD_DESCRIPTOR_TYPE:
-            return self.save_reduce(type, (object.__format__,), obj=obj)
+            return self.save_reduce(type, (SPickleTools.reducer(getattr, (object, "__format__")), ), obj=obj)
         if obj is METHOD_WRAPPER_TYPE:
-            return self.save_reduce(type, ((1).__add__, ), obj=obj)
+            return self.save_reduce(type, (SPickleTools.reducer(getattr, (1,"__add__")), ), obj=obj)
         if obj is LISTITERATOR_TYPE:
             return self.save_reduce(type, (EMPTY_LIST_ITERATOR,), obj=obj)
         if obj is TUPLEITERATOR_TYPE:
@@ -728,12 +749,24 @@ class Pickler(pickle.Pickler):
         self.do_checkpoint(obj, self._save_dict_impl)
         
     def _save_dict_impl(self, obj):
+        try:
+            _pickle_moduledict = self._pickle_moduledict
+        except AttributeError:
+            # not Stackless Python
+            try:
+                mod = self.module_dict_ids[id(obj)]
+            except KeyError:
+                modict_saver = None
+            else:
+                if not self.mustSerialize(mod):
+                    return self.save_reduce(getattr, (mod, "__dict__"), obj=obj)
+        else:
         ## Stackless addition BEGIN
-        modict_saver = self._pickle_moduledict(self, obj)
-        if modict_saver is not None:
-            mod = modict_saver[1][0]
-            if not self.mustSerialize(mod):
-                return self.save_reduce(*modict_saver, obj=obj)
+            modict_saver = _pickle_moduledict(self, obj)
+            if modict_saver is not None:
+                mod = modict_saver[1][0]
+                if not self.mustSerialize(mod):
+                    return self.save_reduce(*modict_saver, obj=obj)
         ## Stackless addition END
         write = self.write
         parent = self.object_dict_ids.get(id(obj))
@@ -854,7 +887,197 @@ class Pickler(pickle.Pickler):
                     rv = reduce()
                 else:
                     raise e
+            # Now test, if reduce produced a usable result
+            try:
+                # test for the default result. If the function has a correct __reduce__ method,
+                # it will probably return something different
+                rvIsBroken = rv[0] is copy_reg.__newobj__ and 1 == len(rv[1]) and rv[1][0] is types.FunctionType
+            except Exception:
+                rvIsBroken = False
+            if rvIsBroken:
+                return self.saveFunction(obj)
+            
         return self.save_reduce(obj=obj, *rv)
+
+    def save_reduce(self, func, args, state=None,
+                    listitems=None, dictitems=None, obj=None):
+        # This API is called by some subclasses
+
+        # Assert that args is a tuple or None
+        if not isinstance(args, types.TupleType):
+            raise PicklingError("args from reduce() should be a tuple")
+
+        # Assert that func is callable
+        if not hasattr(func, '__call__'):
+            raise PicklingError("func from reduce should be callable")
+
+        save = self.save
+        write = self.write
+        memo = self.memo
+        objId = id(obj)
+
+        # Protocol 2 special case: if func's name is __newobj__, use NEWOBJ
+        if self.proto >= 2 and getattr(func, "__name__", "") == "__newobj__":
+            # A __reduce__ implementation can direct protocol 2 to
+            # use the more efficient NEWOBJ opcode, while still
+            # allowing protocol 0 and 1 to work normally.  For this to
+            # work, the function returned by __reduce__ should be
+            # called __newobj__, and its first argument should be a
+            # new-style class.  The implementation for __newobj__
+            # should be as follows, although pickle has no way to
+            # verify this:
+            #
+            # def __newobj__(cls, *args):
+            #     return cls.__new__(cls, *args)
+            #
+            # Protocols 0 and 1 will pickle a reference to __newobj__,
+            # while protocol 2 (and above) will pickle a reference to
+            # cls, the remaining args tuple, and the NEWOBJ code,
+            # which calls cls.__new__(cls, *args) at unpickling time
+            # (see load_newobj below).  If __reduce__ returns a
+            # three-tuple, the state from the third tuple item will be
+            # pickled regardless of the protocol, calling __setstate__
+            # at unpickling time (see load_build below).
+            #
+            # Note that no standard __newobj__ implementation exists;
+            # you have to provide your own.  This is to enforce
+            # compatibility with Python 2.2 (pickles written using
+            # protocol 0 or 1 in Python 2.3 should be unpicklable by
+            # Python 2.2).
+            cls = args[0]
+            if not hasattr(cls, "__new__"):
+                raise PicklingError(
+                    "args[0] from __newobj__ args has no __new__")
+            if obj is not None and cls is not obj.__class__:
+                raise PicklingError(
+                    "args[0] from __newobj__ args has the wrong class")
+            args = args[1:]
+            save(cls)
+            if obj is not None:
+                x = memo.get(objId)
+                if x:
+                    # obviously save(cls) created obj. No need to continue
+                    write(pickle.POP)  # cls
+                    write(self.get(x[0]))
+                    return None
+            save(args)
+            if obj is not None:
+                x = memo.get(objId)
+                if x:
+                    # obviously save(args) created obj. No need to continue
+                    write(pickle.POP)  # cls
+                    write(pickle.POP)  # args
+                    write(self.get(x[0]))
+                    return None
+            write(pickle.NEWOBJ)
+        else:
+            save(func)
+            if obj is not None:
+                x = memo.get(objId)
+                if x:
+                    # obviously save(func) created obj. No need to continue
+                    write(pickle.POP)  # func
+                    write(self.get(x[0]))
+                    return None
+            save(args)
+            if obj is not None:
+                x = memo.get(objId)
+                if x:
+                    # obviously save(args) created obj. No need to continue
+                    write(pickle.POP)  # func
+                    write(pickle.POP)  # args
+                    write(self.get(x[0]))
+                    return None
+            write(pickle.REDUCE)
+
+        if obj is not None:
+            self.memoize(obj)
+
+        # More new special cases (that work with older protocols as
+        # well): when __reduce__ returns a tuple with 4 or 5 items,
+        # the 4th and 5th item should be iterators that provide list
+        # items and dict items (as (key, value) tuples), or None.
+
+        if listitems is not None:
+            self._batch_appends(listitems)
+
+        if dictitems is not None:
+            self._batch_setitems(dictitems)
+
+        if state is not None:
+            save(state)
+            write(pickle.BUILD)
+
+    def saveFunction(self, obj):
+        memo = self.memo
+        objId = id(obj)
+        
+        # A pure python implementation
+        pickledModule = self._saveMangledModuleName(obj.__module__)
+        
+        # in order to avoid a possible recursion, save the globals, defaults and closure first
+        func_globals = obj.func_globals
+        if id(func_globals) not in memo:
+            self.save(obj.func_globals)
+            self.write(pickle.POP)
+        
+        # In case the globals dict refers to obj
+        x = memo.get(objId)
+        if x:
+            self.write(self.get(x[0]))
+            return
+        
+        func_closure = obj.func_closure
+        if func_closure and id(func_closure) not in memo:
+            self.save(func_closure)
+            self.write(pickle.POP)
+            # In case the closure refers to obj
+            x = memo.get(objId)
+            if x:
+                self.write(self.get(x[0]))
+                return
+
+        func_defaults = obj.func_defaults
+        if func_defaults and id(func_defaults) not in memo:
+            self.save(func_defaults)
+            self.write(pickle.POP)
+            # In case the defaults refers to obj
+            x = memo.get(objId)
+            if x:
+                self.write(self.get(x[0]))
+                return
+            
+        self.save_reduce(types.FunctionType, (obj.func_code, 
+                                              obj.func_globals,
+                                              obj.func_name,
+                                              func_defaults,
+                                              func_closure), 
+                         obj=obj)
+        self.save_reduce(setattr, (obj, "__module__", pickledModule))
+        self.write(pickle.POP)
+        self.save_reduce(setattr, (obj, "__doc__", obj.__doc__))
+        self.write(pickle.POP)
+        self.save_reduce(setattr, (obj, "func_dict", obj.func_dict))
+        self.write(pickle.POP)
+
+    def saveCode(self, obj):
+        self.save_reduce(types.CodeType, (obj.co_argcount,
+                                          obj.co_nlocals,
+                                          obj.co_stacksize,
+                                          obj.co_flags,
+                                          obj.co_code,
+                                          obj.co_consts,
+                                          obj.co_names,
+                                          obj.co_varnames,
+                                          obj.co_filename,
+                                          obj.co_name,
+                                          obj.co_firstlineno,
+                                          obj.co_lnotab,
+                                          obj.co_freevars,
+                                          obj.co_cellvars),obj=obj)
+
+    def saveCell(self, obj):
+        self.save_reduce(create_cell, (obj.cell_contents,), obj=obj)
 
     def saveClass(self, obj):
         # create a class in 2 steps

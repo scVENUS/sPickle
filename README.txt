@@ -74,6 +74,15 @@ No further plans currently
 Changes
 =======
 
+Version 0.1.0
+-------------
+2012-10-28
+Support for plain Python
+
+sPickle no longer requires Stackless Python for most of its work. Of course, 
+if you want to pickle tasklets you need Stackless, but for functions, classes
+and most other objects, the normal CPython 2.7 is good enough.
+
 Version 0.0.9
 -------------
 2012-10-28

@@ -18,7 +18,7 @@
 
 from __future__ import absolute_import
 
-from unittest import TestCase, skipIf
+from unittest import TestCase, skipIf, skipUnless
 
 import pickletools
 from StringIO import StringIO
@@ -38,6 +38,15 @@ import collections
 import logging
 import operator
 import weakref
+
+try:
+    from stackless import _wrap
+    del _wrap
+except ImportError:
+    isStackless = False
+else:
+    isStackless = True
+
 
 try:
     import gtk
@@ -1054,6 +1063,7 @@ class PicklingTest(TestCase):
         self.assertIsInstance(obj, xrange)
         self.assertListEqual(list(obj), list(orig))
 
+    @skipUnless(isStackless, "stackless only")
     def testRangeIterator(self):
         x = xrange(2,10,2)
         orig = iter(x)

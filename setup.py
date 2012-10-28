@@ -20,21 +20,16 @@
 from setuptools import setup
 import sys
 if sys.version_info < (2, 7):
-    print 'ERROR: sPickle requires at least Stackless Python 2.7 to run.'
+    print 'ERROR: sPickle requires at least Python 2.7 to run.'
     sys.exit(1)
-try:
-    import stackless
-    del stackless
-except ImportError:
-    print 'ERROR: sPickle requires Stackless Python to run.'
-    sys.exit(1)
+
     
 from conf import release
 
 setup(
     name='sPickle',
     version=release,
-    description='Extended Pickler for Stackless Python',
+    description='Extended Pickler with special support for Stackless Python',
     author='Anselm Kruis',
     author_email='a.kruis@science-computing.de',
     url='http://pypi.python.org/pypi/sPickle',
@@ -45,13 +40,13 @@ setup(
 
     long_description=
 """
-sPickle is an extended version of the pickle module for Stackless Python
-------------------------------------------------------------------------
+sPickle is an extended version of the pickle module
+---------------------------------------------------
 
 It supports pickling of modules and many resources the standard pickler can't
 cope with. 
 
-This version requires Python 2.7 or later. Unfortunately, there is currently no
+This version requires Python 2.7. Unfortunately, there is currently no
 Python 3 version.
 
 Git repository: git://github.com/akruis/sPickle.git
