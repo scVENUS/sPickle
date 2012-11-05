@@ -46,6 +46,7 @@ import socket
 import tempfile
 import codecs
 import weakref
+import imp
 
 try:
     from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
@@ -220,13 +221,6 @@ def restore_modules_entry(doDel, old, new, preserveReferenceToNew=True):
         release_lock()
     return new
 
-#def import_module(name):
-#    global sys
-#    if sys is None:
-#        sys = __import__('sys')
-#    __import__(name)
-#    return sys.modules[name]
-
 def create_thread_lock(locked):
     """recreate a lock object"""
     l = thread.allocate_lock()
@@ -391,6 +385,7 @@ class Pickler(pickle.Pickler):
         if serializeableModules is None:
             serializeableModules = []
         self.serializeableModules = serializeableModules
+        self._serializableModulesIds = set()
         
         if mangleModuleName is not None:
             if not callable(mangleModuleName):
@@ -462,9 +457,18 @@ class Pickler(pickle.Pickler):
         
     def mustSerialize(self, obj):
         """test, if a module must be serialised"""
+
+        objId = id(obj)
+        if objId in self._serializableModulesIds:
+            return True
         # Legacy check for flowGuide2 workflow modules
         try:
-            return bool(getattr(obj, MODULE_TO_BE_PICKLED_FLAG_NAME))
+            ret = bool(getattr(obj, MODULE_TO_BE_PICKLED_FLAG_NAME))
+            if ret:
+                self._serializableModulesIds.add(objId)
+            # it is intended, that an module can be marked as importable by setting
+            # MODULE_TO_BE_PICKLED_FLAG_NAME to False
+            return ret
         except Exception:
             pass # Attribute is not present
         
@@ -482,12 +486,7 @@ class Pickler(pickle.Pickler):
                         break
         else:
             return False
-        try:
-            # Mark the module. The mark will be pickled and therefore 
-            # the unpickled module will be considered beeing "mustSerialize" too 
-            setattr(obj, MODULE_TO_BE_PICKLED_FLAG_NAME, True)
-        except Exception, e:
-            LOGGER().debug("Ohh, module %r is not writable: %r", obj.__name__, e)
+        self._serializableModulesIds.add(objId)
         return True
         
 
@@ -563,14 +562,15 @@ class Pickler(pickle.Pickler):
             return
 
         try:
-            objDict = getattr(obj, "__dict__", None)
+            objDict = obj.__dict__
         except Exception:
-            objDict = None
-        if isinstance(objDict, types.DictType):
-            dictId = id(objDict)
-            x = self.memo.get(dictId)
-            if x is not None:
-                raise ObjectAlreadyPickledError("__dict__ already pickled (memo %s) for %r" % (x[0], obj), obj, dictId)
+            pass
+        else:
+            if isinstance(objDict, types.DictType):
+                dictId = id(objDict)
+                x = self.memo.get(dictId)
+                if x is not None:
+                    raise ObjectAlreadyPickledError("__dict__ already pickled (memo %s) for %r" % (x[0], obj), obj, dictId)
 
 
         # special cases 
@@ -803,10 +803,13 @@ class Pickler(pickle.Pickler):
                 module = pickle.whichmodule(obj, name)
 
         try:
-            __import__(module)
             mod = sys.modules[module]
+            if isinstance(mod, types.ModuleType) and self.mustSerialize(mod) and memo.get(id(mod)) is not None:
+                # pickling of the module is in progress.
+                # We must not import from this module
+                raise KeyError("This module must be serialized by value")
             klass = getattr(mod, name)
-        except (ImportError, KeyError, AttributeError):
+        except (KeyError, AttributeError):
             if t in (type, types.ClassType):
                 return self.saveClass(obj)
             raise pickle.PicklingError(
@@ -1146,8 +1149,9 @@ class Pickler(pickle.Pickler):
     def saveModule(self, obj, reload=False):
         write = self.write
 
-        self.module_dict_ids[id(obj.__dict__)] = obj
         obj_name = obj.__name__
+        obj_dict = obj.__dict__
+        self.module_dict_ids[id(obj_dict)] = obj
         if obj is not sys.modules.get(obj_name):
             # either an anonymous module or it did change its __name__
             for k,v in sys.modules.iteritems():
@@ -1194,20 +1198,28 @@ class Pickler(pickle.Pickler):
             self.save(restore_modules_entry)
             self.write(pickle.TRUE if doDel else pickle.FALSE)
             self.save_reduce(save_modules_entry, (pickledModuleName,))
-            
-        savedModule = save_modules_entry(obj_name)
-        try:            
+
+        # We need the import lock, to prevent other threads from modifying the
+        # __dict__ of a package by imports of sub-modules
+        imp.acquire_lock()
+        try:
+            module_dict = dict(obj_dict)
+            try:
+                del module_dict['__doc__'] # saved separately
+            except KeyError:
+                pass
+            module_dict[MODULE_TO_BE_PICKLED_FLAG_NAME] = True
             # create the module
-            self.save_reduce(create_module, (type(obj), pickledModuleName, getattr(obj, "__doc__", None)), obj.__dict__, obj=obj)
+            self.save_reduce(create_module, (type(obj), pickledModuleName, getattr(obj, "__doc__", None)), module_dict, obj=obj)
         finally:
-            restore_modules_entry(True, savedModule, obj, preserveReferenceToNew=False)
+            imp.release_lock()
             # Flush log messages
             LOGGER.flush()
-            
+
         if doDel or not reload:
             write(pickle.TUPLE3+pickle.REDUCE)
         return True
-    
+
         
     def _saveMangledModuleName(self, name, module=None):
         """

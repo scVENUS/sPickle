@@ -57,8 +57,24 @@ logging.basicConfig(level=logging.INFO)
 
 
 from .. import _sPickle
-from . import wf_module 
+from . import wf_module
 
+class PEP302ImportDetector(object):
+    def __init__(self, raiseOn=None):
+        self.imports = set()
+        self.raiseOn = raiseOn if raiseOn else ()
+        
+    def find_module(self, fullname, path=None):
+        self.imports.add(fullname)
+        if fullname in self.raiseOn:
+            raise AssertionError("Module must not be imported: '%s'" % (fullname,) )
+        return None
+    def __enter__(self):
+        sys.meta_path.insert(0, self)
+        return self
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.meta_path.remove(self)
+        return False
 
 # Various test objects
 
@@ -222,7 +238,7 @@ setattr(anonymousWfModule, _sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME, True)
 
 class StrangeModuleType(types.ModuleType):
     """Modules of this type have an 'isOk()' function, that is 
-    not referenced in the modules dictionary. Therefore this function does not
+    not referenced in the dictionary of the module. Therefore this function does not
     get pickled together with its module."""
     
     syntheticFunctions = {}
@@ -324,11 +340,24 @@ class PicklingTest(TestCase):
         return TestCase.run(self, result)
     
     def setUp(self):
-        self.pickler = _sPickle.SPickleTools()
+        self.pickler = _sPickle.SPickleTools(serializeableModules = [wf_module.__name__])
+        try:
+            delattr(wf_module, _sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME)
+        except Exception:
+            pass
+        self.sys_modules = dict(sys.modules)
+        from . import __dict__ as package_dict
+        self.package_dict = dict(package_dict)
         
     def tearDown(self):
-        pass
+        sys.modules.clear()
+        sys.modules.update(self.sys_modules)
+        from . import __dict__ as package_dict
+        package_dict.clear()
+        package_dict.update(self.package_dict)
 
+    # imported due to a lazy import mechanism in module "email"
+    IMPORTS_TO_IGNORE = ('email.', 'uu', 'quopri', 'imghdr', 'sndhdr')
     def dumpWithPreobjects(self, preObjects, *obj, **kw):
         """Dump one or more objects.
         
@@ -341,14 +370,30 @@ class PicklingTest(TestCase):
         dis = kw.get("dis")
         try:
             toBeDumped = (preObjects, obj[0] if len(obj) == 1 else obj )
-            p = self.pickler.dumps(toBeDumped, mangleModuleName=kw.get("mangleModuleName"))
+
+            # ensure that the pickler does not touch sys.modules more than required
+            with PEP302ImportDetector() as detector:
+                sys_modules = dict(sys.modules)
+                p = self.pickler.dumps(toBeDumped, mangleModuleName=kw.get("mangleModuleName"))
+                sys_modules2 = dict(sys.modules)
+            imports = set()
+            for n in detector.imports:
+                sys_modules2.pop(n,None)
+                for i in self.IMPORTS_TO_IGNORE:
+                    if n.startswith(i):
+                        break
+                else:
+                    imports.add(n)
+            self.assertEqual(sys_modules, sys_modules2)
+            self.assertEqual(imports, set())
+            
             self.pickler.dis(p, out=StringIO())
         except:
             exinfo = sys.exc_info()
             l = []
             try:
                 _sPickle.Pickler(l, 2).dump(toBeDumped)
-            except:
+            except Exception:
                 try:
                     l.append(pickle.STOP)
                     pickletools.dis("".join(l), out=sys.stderr)
@@ -622,9 +667,12 @@ class PicklingTest(TestCase):
             self.assertTrue(orig.__name__ in tif.names, "name %r not in %r" % (orig.__name__, tif.names))
         return (obj, tif)
 
-    def wfModuleTest(self, wf_module, preObjects=None, **kw):
-        orig = wf_module
-        obj, tif = self._moduleTestCommon(orig, preObjects, **kw)
+    def wfModuleTest(self, wf_module_, preObjects=None, **kw):
+        orig = wf_module_
+        with PEP302ImportDetector(raiseOn=[wf_module.__name__, wf_module.wf_modul2.__name__]):
+            obj, tif = self._moduleTestCommon(orig, preObjects, **kw)
+        # the module must be flagged as a wf-module
+        self.assertTrue(getattr(obj, _sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME))
         # the object must be a real clone and must not be imported
         self.assertFalse(obj is orig)
         self.assertFalse(orig.__name__ in tif.names, "Import of forbidden module %r" % (orig.__name__,))
@@ -632,7 +680,9 @@ class PicklingTest(TestCase):
         
     def _moduleTestCommon(self, module, preObjects=None, unimport=(), dis=False, mangleModuleName=None):
         orig = module
+        orig_dict = dict(orig.__dict__)
         p = self.dumpWithPreobjects(preObjects, orig, dis=dis, mangleModuleName=mangleModuleName)
+        self.assertEqual(orig.__dict__, orig_dict)
         
         if unimport:
             if unimport is True:
@@ -649,7 +699,11 @@ class PicklingTest(TestCase):
         if mangleModuleName:
             oname = mangleModuleName.getMangledName(oname)
         self.assertEquals(obj.__name__, oname)
-        self.assertEqual(set(obj.__dict__.iterkeys()), set(orig.__dict__.iterkeys()))
+        obj_dict_keys = set(obj.__dict__.iterkeys())
+        obj_dict_keys.discard(_sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME)
+        orig_dict_keys = set(orig.__dict__.iterkeys())
+        orig_dict_keys.discard(_sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME)
+        self.assertEqual(obj_dict_keys, orig_dict_keys)
         if callable(getattr(orig, "isOk", None)):
             self.assertTrue(obj.isOk() is True)
         
@@ -700,15 +754,22 @@ class PicklingTest(TestCase):
         obj, mod = self.pickler.loads(p)[-1]
         self.assertTrue(obj is g)
 
-    def wfModuleDictTest(self, wf_module, preObjects = None, dis=False):
-        orig = getattr(wf_module, "__dict__")
-        p = self.dumpWithPreobjects(preObjects, orig, wf_module)
+    def wfModuleDictTest(self, wf_module_, preObjects = None, dis=False):
+        orig = getattr(wf_module_, "__dict__")
+        saved_orig = dict(orig)
+        with PEP302ImportDetector(raiseOn=[wf_module.__name__, wf_module.wf_modul2.__name__]):
+            p = self.dumpWithPreobjects(preObjects, orig, wf_module_, dis=dis)
+        self.assertEqual(orig, saved_orig)
         obj, mod = self.pickler.loads(p)[-1]
         self.assertTrue(type(obj) is type(orig))
         self.assertFalse(obj is orig)
-        self.assertEqual(set(obj.keys()), set(orig.keys()))
-        self.assertTrue(type(wf_module) is type(mod))
-        self.assertTrue(mod.__dict__ is obj)
+        obj_dict_keys = set(obj)
+        obj_dict_keys.discard(_sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME)
+        orig_dict_keys = set(orig)
+        orig_dict_keys.discard(_sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME)
+        self.assertEqual(obj_dict_keys, orig_dict_keys)
+        self.assertTrue(type(wf_module_) is type(mod))
+        self.assertIs(mod.__dict__, obj)
 
     # Tests for function and code objects
     
@@ -736,7 +797,8 @@ class PicklingTest(TestCase):
             
     def wfFunctionTest(self, function, preObjects=None, dis=False):
         orig = function
-        p = self.dumpWithPreobjects(preObjects, orig, dis=dis)
+        with PEP302ImportDetector(raiseOn=[wf_module.__name__, wf_module.wf_modul2.__name__]):
+            p = self.dumpWithPreobjects(preObjects, orig, dis=dis)
         obj = self.pickler.loads(p)[-1]
         self.assertTrue(type(obj) is type(orig))
         self.assertFalse(obj is orig)

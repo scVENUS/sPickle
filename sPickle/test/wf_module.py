@@ -16,14 +16,11 @@
 #  limitations under the License.
 #
 
-"""A test module, that is marked as beeing part of a flow definition""" 
+"""A test module, that is marked as being part of a flow definition"""
 
 from __future__ import absolute_import
-
-__module_must_be_pickled__ = True
 
 from . import wf_modul2
 
 def isOk():
     return wf_modul2.isOk()
-    # return True
