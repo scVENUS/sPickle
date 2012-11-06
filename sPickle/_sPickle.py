@@ -22,17 +22,12 @@ import pickle
 import cPickle
 import pickletools
 import thread
-import threading
 import os.path
 import collections
 import operator
 import functools
 import inspect
 import copy_reg
-
-#saved_dispatch = pickle.Pickler.dispatch.copy()
-#saved_dispatch_table = pickle.dispatch_table.copy()
-
 import types
 from pickle import PickleError, PicklingError
 try:
@@ -46,6 +41,7 @@ import socket
 import tempfile
 import codecs
 import weakref
+
 
 try:
     from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
@@ -738,13 +734,13 @@ class Pickler(pickle.Pickler):
     def save_global(self, obj, name=None, pack=struct.pack):
         write = self.write
         memo = self.memo
-        t = type(obj)
+        isClass = inspect.isclass(obj)
 
         if name is None:
             name = obj.__name__
 
         module = None
-        if t is type:
+        if isClass:
             for k in dir(types):
                 if obj is getattr(types, k, None):
                     module = types.__name__
@@ -761,12 +757,12 @@ class Pickler(pickle.Pickler):
             if isinstance(mod, types.ModuleType) and self.mustSerialize(mod) and memo.get(id(mod)) is not None:
                 # pickling of the module is in progress.
                 # We must not import from this module
-                if t in (type, types.ClassType):
+                if isClass:
                     return self.saveClass(obj)
-                raise pickle.PicklingError("The containing module '%s' must be serialized by value" % (module,))
+                raise pickle.PicklingError("Can't pickle %r: the containing module '%s' must be serialized by value" % (obj, module))
             klass = getattr(mod, name)
         except (KeyError, AttributeError):
-            if t in (type, types.ClassType):
+            if isClass:
                 return self.saveClass(obj)
             raise pickle.PicklingError(
                 "Can't pickle %r: it's not found as %s.%s" %
@@ -778,7 +774,7 @@ class Pickler(pickle.Pickler):
                     # Sys contains two copies of these functions, one 
                     # named <name> and the other named "__<name>__".  
                     return self.save_global(obj, "__"+name+"__", pack)
-                if t in (type, types.ClassType):
+                if isClass:
                     return self.saveClass(obj)
                 raise pickle.PicklingError(
                     "Can't pickle %r: it's not the same object as %s.%s" %

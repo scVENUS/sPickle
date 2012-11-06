@@ -76,7 +76,9 @@ Changes
 Version 0.1.x
 -------------
 2012-11-06
-Improved class Pickler. It does not change sys.modules or its content any more.
+Support pickling of classes with a custom meta class
+Improved sPickle.Pickler. It no longer modifies sys.modules or
+modules.
 
 Version 0.1.0
 -------------

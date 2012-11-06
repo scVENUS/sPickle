@@ -1434,11 +1434,35 @@ class PicklingTest(TestCase):
         cls = self.classCopyTest(orig, dis=False)
         self.assertIsInstance(cls.md, types.MemberDescriptorType)
 
+    def testClassWithMetaClass(self):
+        class C(object):
+            class __metaclass__(type):
+                # the absolute minimal implementation
+                pass
+        orig = C
+        cls = self.classCopyTest(orig, dis=False)
+        self.assertClassEquals(orig.__metaclass__, cls.__metaclass__)
+
+    def testClassWithMetaClass2(self):
+        class C(object):
+            class __metaclass__(type):
+                # the absolute minimal implementation
+                pass
+        class orig(C):
+            pass
+        cls = self.classCopyTest(orig, dis=False)
+        self.assertClassEquals(orig.__metaclass__, cls.__metaclass__)
+
     def assertClassEquals(self, origCls, cls, level=0):
         if origCls is cls:
             return
         self.assertLess(level, 10, "Possible recursion detected")
-        self.assertTrue(type(cls) is type(origCls))
+        if type(origCls) in (type, types.ClassType):
+            # skip this assert for metaclasses
+            self.assertIs(type(cls), type(origCls))
+        else:
+            # metaclass
+            self.assertClassEquals(type(cls), type(origCls))
         self.assertEqual(cls.__name__, origCls.__name__)
         self.assertEqual(cls.__module__, origCls.__module__)
         self.assertEqual(len(cls.__bases__), len(origCls.__bases__))
@@ -1446,7 +1470,8 @@ class PicklingTest(TestCase):
             self.assertClassEquals(b1, b2, level+1)
         self.assertEqual(set(dir(cls)), set(dir(origCls)))
         for k in dir(cls):
-            if k in ('__dict__', '__subclasshook__', '__weakref__'):
+            if k in ('__dict__', '__subclasshook__', '__weakref__', '__abstractmethods__'):
+                # See http://bugs.python.org/issue10006 about __abstractmethods__
                 continue
             v1 = getattr(cls, k)
             v2 = getattr(origCls, k)
