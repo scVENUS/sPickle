@@ -46,7 +46,6 @@ import socket
 import tempfile
 import codecs
 import weakref
-import imp
 
 try:
     from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
@@ -97,60 +96,15 @@ try:
 except ImportError:
     class CSTRINGIO_INPUT_TYPE(object): pass
     class CSTRINGIO_OUTPUT_TYPE(object): pass
-    
-class _DelayedLogger(object):
-    from imp import lock_held
-    
-    def __init__(self, name):
-        self.__logger = None
-        self.__name = name
-        self.__tl = threading.local()
-    
-    def __getLogger(self):
-        if self.__logger is None:
-            import logging
-            self.__logger = logging.getLogger(self.__name)
-        return self.__logger
-        
-    def __getQueue(self):
-        tl = self.__tl
-        try:
-            return tl.queue
-        except AttributeError:
-            tl.queue = collections.deque()
-        return tl.queue
-        
-    def __call__(self):
-        if self.lock_held():
-            return self
-        self.flush()
-        return self.__getLogger()
-    
-    def __getattr__(self, name):
-        f = functools.partial(self.__log, name)
-        setattr(self, name, f)
-        return f
-    
-    def __log(self, method, *args, **kw):
-        if method is not None:
-            queue = self.__getQueue()
-            queue.append((method, args, kw))
-        
-        if not self.lock_held():
-            queue = self.__getQueue()
-            while True:
-                try:
-                    nextCall = queue.popleft()
-                except IndexError:
-                    break
-                getattr(self.__getLogger(), nextCall[0])(*nextCall[1], **nextCall[2])
-                
-    def flush(self):
-        self.__log(None)
 
-LOGGER = _DelayedLogger(__name__)
-            
-            
+__LOGGER = None
+def LOGGER():
+    global __LOGGER
+    if __LOGGER is None:
+        import logging
+        __LOGGER = logging.getLogger(__name__)
+    return __LOGGER
+
 
 # types to be replaced by proxies, if possible  , 
 RESOURCE_TYPES = (file, socket.SocketType, SOCKET_PAIR_TYPE, socket._closedsocket,
@@ -807,7 +761,9 @@ class Pickler(pickle.Pickler):
             if isinstance(mod, types.ModuleType) and self.mustSerialize(mod) and memo.get(id(mod)) is not None:
                 # pickling of the module is in progress.
                 # We must not import from this module
-                raise KeyError("This module must be serialized by value")
+                if t in (type, types.ClassType):
+                    return self.saveClass(obj)
+                raise pickle.PicklingError("The containing module '%s' must be serialized by value" % (module,))
             klass = getattr(mod, name)
         except (KeyError, AttributeError):
             if t in (type, types.ClassType):
@@ -1199,22 +1155,14 @@ class Pickler(pickle.Pickler):
             self.write(pickle.TRUE if doDel else pickle.FALSE)
             self.save_reduce(save_modules_entry, (pickledModuleName,))
 
-        # We need the import lock, to prevent other threads from modifying the
-        # __dict__ of a package by imports of sub-modules
-        imp.acquire_lock()
+        module_dict = dict(obj_dict)
         try:
-            module_dict = dict(obj_dict)
-            try:
-                del module_dict['__doc__'] # saved separately
-            except KeyError:
-                pass
-            module_dict[MODULE_TO_BE_PICKLED_FLAG_NAME] = True
-            # create the module
-            self.save_reduce(create_module, (type(obj), pickledModuleName, getattr(obj, "__doc__", None)), module_dict, obj=obj)
-        finally:
-            imp.release_lock()
-            # Flush log messages
-            LOGGER.flush()
+            del module_dict['__doc__'] # saved separately
+        except KeyError:
+            pass
+        module_dict[MODULE_TO_BE_PICKLED_FLAG_NAME] = True
+        # create the module
+        self.save_reduce(create_module, (type(obj), pickledModuleName, getattr(obj, "__doc__", None)), module_dict, obj=obj)
 
         if doDel or not reload:
             write(pickle.TUPLE3+pickle.REDUCE)
