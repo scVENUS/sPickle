@@ -357,7 +357,7 @@ class PicklingTest(TestCase):
         package_dict.update(self.package_dict)
 
     # imported due to a lazy import mechanism in module "email"
-    IMPORTS_TO_IGNORE = ('email.', 'uu', 'quopri', 'imghdr', 'sndhdr')
+    IMPORTS_TO_IGNORE = ('email.', 'uu', 'quopri', 'imghdr', 'sndhdr', 'encodings', 'urllib')
     def dumpWithPreobjects(self, preObjects, *obj, **kw):
         """Dump one or more objects.
         
