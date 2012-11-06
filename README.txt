@@ -73,6 +73,11 @@ No further plans currently
 Changes
 =======
 
+Version 0.1.x
+-------------
+2012-11-06
+Improved class Pickler. It does not change sys.modules or its content any more.
+
 Version 0.1.0
 -------------
 2012-10-28
