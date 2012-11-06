@@ -14,7 +14,7 @@ to release enhancements back to the public.
 Requirements
 ------------
 
-* Stackless Python 2.7
+* Python 2.7
 * RPyC is used in the unit tests
 
 (Sorry, no Python 3 support. I'll happily accept patches.)  
@@ -64,7 +64,8 @@ differences under the hood.
 Support
 =======
 There is currently no support available, but you can drop me a mail.
-a [dot] kruis [at] science-computing [dot] de  
+a [dot] kruis [at] science-computing [dot] de
+or use the facilities provided by https://github.com/akruis/sPickle
 
 Plan
 ====
@@ -73,10 +74,11 @@ No further plans currently
 Changes
 =======
 
-Version 0.1.x
+Version 0.1.1
 -------------
 2012-11-06
-Improved class Pickler. It does not change sys.modules or its content any more.
+Support pickling of classes with a custom meta class.
+Improved sPickle.Pickler. It no longer modifies sys.modules or modules.
 
 Version 0.1.0
 -------------
