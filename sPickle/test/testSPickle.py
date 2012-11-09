@@ -537,7 +537,7 @@ class PicklingTest(TestCase):
 
     class MangleModuleName(object):
         """Add a prefix to certain module names"""
-        def __init__(self, start, prefix, package=None):
+        def __init__(self, start, prefix, package=None, returnStr=False):
             """
             Create a MangleModuleName
             
@@ -548,18 +548,20 @@ class PicklingTest(TestCase):
             self.start = start
             self.prefix = prefix
             self.package = package
+            self.returnStr = returnStr
         def __call__(self, pickler, name, module):
             """
             A sPickle.Pickler mangleModuleName functor
             """
             if module is os.path:
-                return "os.path"
+                if self.returnStr:
+                    return "os.path"
+                return _sPickle.SPickleTools.reducer(str, ("os.path",))
             if isinstance(name, str) and (name.startswith(self.start) or name == self.package):
                 prefix = self.prefix
-                class ReplacedModuleName(object):
-                    def __reduce__(self):
-                        return (operator.add, (prefix, name))               
-                return ReplacedModuleName()
+                if self.returnStr:
+                    return prefix + name
+                return _sPickle.SPickleTools.reducer(operator.add, (prefix, name))
             return name
         def getMangledName(self, name, module=None):
             """Unit test helper function"""
@@ -611,20 +613,56 @@ class PicklingTest(TestCase):
 
     def testAnonymousWfModule_MangleModuleName(self):
         self.assertFalse(anonymousWfModule.__name__ in sys.modules)
-        mmn = self.MangleModuleName(anonymousWfModule.__name__, "renamed_")
+        mmn = self.MangleModuleName(anonymousWfModule.__name__, "renamed_", returnStr=True)
         obj, tif = self.wfModuleTest(anonymousWfModule, mangleModuleName=mmn, preObjects=anonymousWfModule.__name__, dis=False)
         self.assertFalse(obj.__name__ in tif.post_modules)
 
     def testAnonymousWfModule2_MangleModuleName(self):
         self.assertFalse(anonymousWfModule.__name__ in sys.modules)
-        mmn = self.MangleModuleName(anonymousWfModule.__name__, "renamed_")
+        mmn = self.MangleModuleName(anonymousWfModule.__name__, "renamed_", returnStr=True)
         obj, tif = self.wfModuleTest(anonymousWfModule, mangleModuleName=mmn, preObjects=anonymousWfModule.__dict__, dis=False)
         self.assertFalse(obj.__name__ in tif.post_modules)
+
+    def testAnonymousModule_MangleModuleName(self):
+        self.assertFalse(anonymousModule.__name__ in sys.modules)
+        mmn = self.MangleModuleName(anonymousModule.__name__, "renamed_", returnStr=True)
+
+        p = self.dumpWithPreobjects(anonymousModule.__name__, anonymousModule, dis=False, 
+                                    mangleModuleName=mmn
+                                    )
+
+        # because the user wants to rename or replace the module, the pickler must not 
+        # use a reference to the module found elsewhere. Instead it must import 
+        # the module.
+        il = self.pickler.getImportList(p)
+        modules = set([i.partition(" ")[0] for i in il])
+        self.assertNotIn(anonymousModule.__name__, modules)
+        self.assertIn(mmn.getMangledName(anonymousModule.__name__), modules)
+        # Of course the import will fail, because there is no such module in the file system
+        self.assertRaises(ImportError, self.pickler.loads, p)
+
+    def testAnonymousModule2_MangleModuleName(self):
+        self.assertFalse(anonymousModule.__name__ in sys.modules)
+        mmn = self.MangleModuleName(anonymousModule.__name__, "renamed_", returnStr=True)
+
+        p = self.dumpWithPreobjects(anonymousModule.__dict__, anonymousModule, dis=False, 
+                                    mangleModuleName=mmn
+                                    )
+
+        # because the user wants to rename or replace the module, the pickler must not 
+        # use a reference to the module found elsewhere. Instead it must import 
+        # the module.
+        il = self.pickler.getImportList(p)
+        modules = set([i.partition(" ")[0] for i in il])
+        self.assertNotIn(anonymousModule.__name__, modules)
+        self.assertIn(mmn.getMangledName(anonymousModule.__name__), modules)
+        # Of course the import will fail, because there is no such module in the file system
+        self.assertRaises(ImportError, self.pickler.loads, p)
 
     def testOsPath_MangleModuleName(self):
         orig = os.path
         self.assertNotEqual(orig.__name__, "os.path")
-        mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__)
+        mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__, returnStr=True)
         p = self.dumpWithPreobjects(None, orig, dis=False, 
                                     mangleModuleName=mmn
                                     )
@@ -637,7 +675,39 @@ class PicklingTest(TestCase):
         obj = self.pickler.loads(p)[1]
         self.assertIs(obj, orig)
 
+    def testOsPath_MangleModuleName2(self):
+        orig = os.path
+        self.assertNotEqual(orig.__name__, "os.path")
+        mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__)
+        p = self.dumpWithPreobjects(None, orig, dis=False, 
+                                    mangleModuleName=mmn
+                                    )
+
+        il = self.pickler.getImportList(p)
+        modules = set([i.partition(" ")[0] for i in il])
+        self.assertNotIn(orig.__name__, modules)
+        self.assertNotIn("os.path", modules)
+        
+        obj = self.pickler.loads(p)[1]
+        self.assertIs(obj, orig)
+
     def testOsPathJoin_MangleModuleName(self):
+        orig = os.path
+        self.assertNotEqual(orig.__name__, "os.path")
+        mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__, returnStr=True)
+        p = self.dumpWithPreobjects(None, orig.join, dis=False, 
+                                    mangleModuleName=mmn
+                                    )
+
+        il = self.pickler.getImportList(p)
+        modules = set([i.partition(" ")[0] for i in il])
+        self.assertNotIn(orig.__name__, modules)
+        self.assertIn("os.path", modules)
+        
+        obj = self.pickler.loads(p)[1]
+        self.assertIs(obj, orig.join)
+
+    def testOsPathJoin_MangleModuleName2(self):
         orig = os.path
         self.assertNotEqual(orig.__name__, "os.path")
         mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__)
@@ -648,7 +718,7 @@ class PicklingTest(TestCase):
         il = self.pickler.getImportList(p)
         modules = set([i.partition(" ")[0] for i in il])
         self.assertNotIn(orig.__name__, modules)
-        self.assertIn("os.path", modules)
+        self.assertNotIn("os.path", modules)
         
         obj = self.pickler.loads(p)[1]
         self.assertIs(obj, orig.join)
