@@ -804,8 +804,15 @@ class Pickler(pickle.Pickler):
             return self.save_reduce(getattr, (mod, name), obj=obj)
         
         mangledModule = self.mangleModuleName(module, mod)
-        write(pickle.GLOBAL + mangledModule + '\n' + name + '\n')
-        self.memoize(obj)
+        if isinstance(mangledModule, str):
+            write(pickle.GLOBAL + mangledModule + '\n' + name + '\n')
+            self.memoize(obj)
+        else:
+            # The module name is computed at unpickling time. 
+            # Therefore we simply fetch obj from the module.
+            # This is more or less equivalent to
+            #   __import__(mangledModule, {},{}, (name,)).name
+            self.save_reduce(getattr, (mod, name), obj=obj)
 
     def save_function(self, obj):
         memo = self.memo
@@ -1113,8 +1120,10 @@ class Pickler(pickle.Pickler):
         pickledModuleName = self._saveMangledModuleName(obj_name, module=obj)
 
         if not self.mustSerialize(obj):
-            # help pickling unimported modules
-            if obj is not sys.modules.get(obj_name):
+            # help pickling unimported modules unless the module gets renamed. In this case
+            # it makes is a failure to fetch the module from another object, because the 
+            # user might want to replace the module by a different one
+            if obj_name == pickledModuleName and obj is not sys.modules.get(obj_name):
                 try:
                     self.save_global(obj)
                     return True

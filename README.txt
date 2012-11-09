@@ -74,6 +74,11 @@ No further plans currently
 Changes
 =======
 
+Version 0.1.x
+-------------
+2012-11-13
+Fixed two problems concerning module renaming.
+
 Version 0.1.1
 -------------
 2012-11-06
