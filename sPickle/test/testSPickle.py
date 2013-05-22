@@ -1658,6 +1658,20 @@ class SPickleToolsTest(TestCase):
         obj = pickler.loads(p)
         self.assertIsInstance(obj, int)
         self.assertEqual(obj, 3)
+        
+NT = collections.namedtuple("NT", "a")
+        
+class PythonBugsTest(TestCase):
+    def testNamedTupleIssue18015(self):
+        # test Python 2.7.5 bug http://bugs.python.org/issue18015
+        pickle273 = '\x80\x02c%s\nNT\nK\x01\x85\x81ccollections\nOrderedDict\n]](U\x01aK\x01ea\x85Rb.' % (__name__,)
+        try:
+            nt = pickle.loads(pickle273)
+        except AttributeError:
+            self.fail("Python bug http://bugs.python.org/issue18015 detected. See README.txt for a work around.")
+        self.assertIsInstance(nt, NT)
+        self.assertTupleEqual(nt, (1,))
+        
 
 if __name__ == "__main__":
     import unittest

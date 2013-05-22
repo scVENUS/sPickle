@@ -78,6 +78,13 @@ Version 0.1.x
 -------------
 2012-11-13
 Fixed two problems concerning module renaming.
+2013-05-22
+Adapted to Python 2.7.4 and 2.7.5.
+
+Note: Python 2.7.5 broke unpickling of named tuples pickled by Python 2.7.3 or 2.7.4.
+This is Python bug http://bugs.python.org/issue18015. You can place the file
+http://bugs.python.org/file30338/fix_python_275_issue18015.pth into your 
+site-packages directory to monkey patch this bug.
 
 Version 0.1.1
 -------------
