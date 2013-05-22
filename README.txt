@@ -74,11 +74,10 @@ No further plans currently
 Changes
 =======
 
-Version 0.1.x
+Version 0.1.2
 -------------
-2012-11-13
-Fixed two problems concerning module renaming.
 2013-05-22
+Fixed two problems concerning module renaming.
 Adapted to Python 2.7.4 and 2.7.5.
 
 Note: Python 2.7.5 broke unpickling of named tuples pickled by Python 2.7.3 or 2.7.4.
