@@ -357,7 +357,7 @@ class PicklingTest(TestCase):
         package_dict.update(self.package_dict)
 
     # imported due to a lazy import mechanism in module "email"
-    IMPORTS_TO_IGNORE = ('email.', 'uu', 'quopri', 'imghdr', 'sndhdr', 'encodings', 'urllib')
+    IMPORTS_TO_IGNORE = ('email.', 'uu', 'quopri', 'imghdr', 'sndhdr', 'encodings', 'urllib', 'calendar')
     def dumpWithPreobjects(self, preObjects, *obj, **kw):
         """Dump one or more objects.
         
@@ -372,7 +372,7 @@ class PicklingTest(TestCase):
             toBeDumped = (preObjects, obj[0] if len(obj) == 1 else obj )
 
             # ensure that the pickler does not touch sys.modules more than required
-            with PEP302ImportDetector() as detector:
+            with PEP302ImportDetector(raiseOn=kw.get("raiseOn")) as detector:
                 sys_modules = dict(sys.modules)
                 p = self.pickler.dumps(toBeDumped, mangleModuleName=kw.get("mangleModuleName"))
                 sys_modules2 = dict(sys.modules)
@@ -748,10 +748,10 @@ class PicklingTest(TestCase):
         self.assertFalse(orig.__name__ in tif.names, "Import of forbidden module %r" % (orig.__name__,))
         return (obj, tif)
         
-    def _moduleTestCommon(self, module, preObjects=None, unimport=(), dis=False, mangleModuleName=None):
+    def _moduleTestCommon(self, module, preObjects=None, unimport=(), dis=False, mangleModuleName=None, raiseOn=None):
         orig = module
         orig_dict = dict(orig.__dict__)
-        p = self.dumpWithPreobjects(preObjects, orig, dis=dis, mangleModuleName=mangleModuleName)
+        p = self.dumpWithPreobjects(preObjects, orig, dis=dis, mangleModuleName=mangleModuleName, raiseOn=raiseOn)
         self.assertEqual(orig.__dict__, orig_dict)
         
         if unimport:
