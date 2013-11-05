@@ -76,7 +76,13 @@ Changes
 
 Version 0.1.x
 -------------
-XXXX-XX-XX
+2013-11-05
+Improved pickling of abstract base classes. Every abstract base class
+contains two WeakSet attributes _abs_cache and _abc_negative_cache. These 
+sets cache the result of subclass tests. It is advisable not to pickle the 
+content of those caches, because it could contain unpickleable objects.
+This commit changes sPickle to replace _abs_cache and _abc_negative_cache
+by new empty WeakSet instances.
 
 Version 0.1.2
 -------------

@@ -38,6 +38,7 @@ import collections
 import logging
 import operator
 import weakref
+import abc
 
 try:
     from stackless import _wrap
@@ -1522,6 +1523,38 @@ class PicklingTest(TestCase):
             pass
         cls = self.classCopyTest(orig, dis=False)
         self.assertClassEquals(orig.__metaclass__, cls.__metaclass__)
+
+    def testABCMeta(self):
+        class C(object):
+            __metaclass__ = abc.ABCMeta
+        C.register(PlainClass)
+
+        self.assertIsInstance(C._abc_cache, weakref.WeakSet)
+        self.assertIsInstance(C._abc_negative_cache, weakref.WeakSet)
+        # fill the negative and positive subclass caches. 
+        # These caches are the real challenge when pickling a 
+        # class with meta-class ABCMeta.
+        self.assertTrue(issubclass(PlainSubClass, C))
+        self.assertIn(PlainSubClass, C._abc_cache)
+        self.assertFalse(issubclass(UnpickleableClass, C))
+        self.assertIn(UnpickleableClass, C._abc_negative_cache)
+        self.assertGreater(C._abc_negative_cache_version, 0)
+
+        p = self.dumpWithPreobjects(None, C, dis=False)
+        cls = self.pickler.loads(p)[-1]
+        self.assertClassEquals(C.__metaclass__, cls.__metaclass__)
+        
+        # Now make sure, the caches of the clone are empty. This 
+        # is necessary to avoid attempts to pickle potentially 
+        # unpickleable classes
+        self.assertEqual(cls._abc_negative_cache_version, 0)
+        self.assertIsInstance(cls._abc_negative_cache, weakref.WeakSet)
+        self.assertIsInstance(cls._abc_cache, weakref.WeakSet)
+        self.assertListEqual(list(cls._abc_negative_cache), [])
+        self.assertListEqual(list(cls._abc_cache), [])
+
+        self.assertTrue(issubclass(PlainSubClass, cls))
+        self.assertFalse(issubclass(UnpickleableClass, cls))
 
     def assertClassEquals(self, origCls, cls, level=0):
         if origCls is cls:

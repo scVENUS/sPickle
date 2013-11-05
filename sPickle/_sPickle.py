@@ -41,7 +41,7 @@ import socket
 import tempfile
 import codecs
 import weakref
-
+import abc
 
 try:
     from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
@@ -1080,6 +1080,14 @@ class Pickler(pickle.Pickler):
             if type(v) in (types.GetSetDescriptorType, types.MemberDescriptorType):
                 if v.__name__ == k and v.__objclass__ is obj:
                     continue
+
+            if f is abc.ABCMeta:
+                # clear caches of abstract base classes
+                if k in ('_abc_cache', '_abc_negative_cache') and type(v) is weakref.WeakSet:
+                    v = weakref.WeakSet()
+                elif k == '_abc_negative_cache_version' and isinstance(v, int):
+                    v = 0
+
             d2[k] = v
 
         self.save_reduce(f,(name, obj.__bases__, d1), obj=obj)
