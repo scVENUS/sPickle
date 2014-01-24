@@ -1670,6 +1670,57 @@ class PicklingTest(TestCase):
         restored = self.pickler.loads(p)[-1]
         self.assertIsNot(restored, orig)
         self.assertIsInstance(restored, orig.__class__)
+
+class FailSaveTest(TestCase):
+    def setUp(self):
+        super(FailSaveTest, self).setUp()
+        self.file = StringIO()
+        self.pickler = _sPickle.FailSavePickler(self.file, -1)
+        self.pickler.get_replacement = self.get_replacement
+        self.unpickleable = UnpickleableClass()
+        self.get_replacement_called = 0
+        self.surrogateFactory = list
+        
+    def get_replacement(self, pickler, obj, exception):
+        self.get_replacement_called += 1
+        self.assertIs(pickler, self.pickler)
+        self.assertIs(obj, self.unpickleable)
+        self.assertIsInstance(exception, pickle.PicklingError)
+        return self.surrogateFactory(self.get_replacement_called)
+
+    def pickleandunpickle(self, obj):
+        self.pickler.dump(obj)
+        return pickle.loads(self.file.getvalue())
+        
+    def testPickleable(self):
+        orig = PlainClass('OK')
+        obj = self.pickleandunpickle(orig)
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, PlainClass)
+        self.assertTrue(obj.isOk())
+        
+    def unpickleable_test(self):
+        orig = (self.unpickleable, {'unpickleable': self.unpickleable})
+        orig[1]['orig'] = orig
+        
+        obj = self.pickleandunpickle(orig)
+        expected_surrogate = self.surrogateFactory(1)
+        
+        self.assertIsNot(obj, orig)
+        self.assertIsInstance(obj, tuple)
+        self.assertEqual(len(obj), 2)
+        self.assertEqual(obj[0], expected_surrogate)
+        self.assertIsInstance(obj[1], dict)
+        self.assertIs(obj[0], obj[1]['unpickleable'])
+        self.assertIs(obj, obj[1]['orig'])
+        
+    def testUnplickleableNormalSurrogate(self):
+        self.surrogateFactory = lambda x: [x]
+        self.unpickleable_test()
+
+    def testUnplickleableNone(self):
+        self.surrogateFactory = lambda x:None
+        self.unpickleable_test()
         
 class SPickleToolsTest(TestCase):
     def testModule_for_globals(self):

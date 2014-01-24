@@ -76,7 +76,9 @@ Changes
 
 Version 0.1.x
 -------------
-xxxx-xx-xx
+2014-01-24
+New class FailSavePickler. It is a subclass of Pickler, that can replace
+otherwise unpickleable objects by surrogates.
 
 Version 0.1.3
 -------------

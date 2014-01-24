@@ -43,6 +43,9 @@ what could be done.
 .. autoclass:: SPickleTools
    :members:
 
+.. autoclass:: FailSavePickler
+   :members: get_replacement
+
 .. autoexception:: StacklessTaskletReturnValueException
 
 
@@ -58,7 +61,8 @@ from ._sPickle import ( Pickler,
                         SPickleTools,
                         MODULE_TO_BE_PICKLED_FLAG_NAME,
                         StacklessTaskletReturnValueException,
-                        RESOURCE_TYPES )
+                        RESOURCE_TYPES,
+                        FailSavePickler )
 from pickle import __all__
 
 __all__ = __all__[:]

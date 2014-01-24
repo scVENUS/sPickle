@@ -176,7 +176,7 @@ def create_thread_lock(locked):
     l = thread.allocate_lock()
     if locked:
         if not l.acquire(0):
-            raise pickle.UnpicklingError("Failed to aquire a nely created lock")
+            raise pickle.UnpicklingError("Failed to acquire a newly created lock")
     return l
 
 def create_null_file(mode, closed):
@@ -452,7 +452,7 @@ class Pickler(pickle.Pickler):
                 self.__write("".join(self.writeList))
 
     def do_checkpoint(self, obj, method, *args, **kw):
-        """Checkpint for dictionary backtracking"""
+        """Checkpoint for dictionary backtracking"""
         memo = self.memo
         writePos = len(self.writeList) 
         memoPos = len(self.memo)
@@ -528,7 +528,7 @@ class Pickler(pickle.Pickler):
             if self.saveModule(obj):
                 return
 
-        super_save = self.__class__.__bases__[0].save
+        super_save = pickle.Pickler.save
         if isinstance(obj, types.FrameType):
             trace_func = obj.f_trace
             if trace_func is not None:
@@ -617,7 +617,7 @@ class Pickler(pickle.Pickler):
                          id(obj), obj, type(obj), 
                          m[0], m[1], type(m[1]))
             self._dumpSaveStack()
-        self.__class__.__bases__[0].memoize(self, obj)
+        pickle.Pickler.memoize(self, obj)
         if _trace_memo_entries:
             i = id(obj)
             m = self.memo.get(i)
@@ -1565,7 +1565,60 @@ class Pickler(pickle.Pickler):
             m = d.get(self.ANALYSE_MEMO_KEY, "n.a.")
             LOGGER().info("Thing to be pickled id=%d, memo-key=%s, type=%s: %s" % (i, m, t, s))
 
+class FailSavePickler(Pickler):
+    """
+    A failsave variant of class :class:`Pickler`.
+    
+    If this pickler detects an unpickleable object, it calls its 
+    method :meth:`get_replacement` to retrieve a surrogate object to 
+    be pickled instead of the unpickleable object.
+    
+    To use this feature you must either assign a suitable callable
+    as attribute 'get_replacement' or derive a create your own subclass
+    of :class:`FailSavePickler` and override method :meth:`get_replacement`.
+    """
+    def save(self, obj):
+        super_save = Pickler.save
+        try:
+            super_save(self, obj)
+        except pickle.PicklingError, e:
+            replacement = self.get_replacement(self, obj, e)
+            if replacement is e:
+                raise
+            super_save(self, replacement)
+            # and now for the dirty part: fake the memo entry for obj
+            # provided the replacement has a memo entry
+            try:
+                unpickler_key = self.memo[id(replacement)][0]
+            except KeyError:
+                # Very simple objects like None, True, False etc 
+                # don't have memo entries.
+                pass
+            else:
+                oid = id(obj)
+                assert oid not in self.memo
+                self.memo[oid] = (unpickler_key, obj)
+
+    def get_replacement(self, pickler, obj, exception):
+        """
+        Get a surrogate for an unpicklable object.
         
+        This method is called if the pickler encounters an otherwise 
+        unpickleable object. The method can return an replacement object
+        or its argument 'exception', if the function is unwilling to 
+        profide a replacement.
+        
+        This implementation always returns 'exception'.
+        
+        :param pickler: the pickler
+        :type pickler: :class:`FailSavePickler` or a subclass thereof
+        :param obj: the unpickleable object
+        :param exception: the exception raised on pickling obj
+        :returns: a pickleable surrogate for obj or 'exception'.
+        """
+        return exception
+    
+
 class SPickleTools(object):
     """A collection of simple utility methods.
     
@@ -1576,14 +1629,18 @@ class SPickleTools(object):
        
     """
     
-    def __init__(self, serializeableModules=None):
+    def __init__(self, serializeableModules=None, pickler_class=None):
         """
         The optional argument serializeableModules is passed 
         on to the class :class:`Pickler`.
+        
+        The optional arguments pickler_class can be used to set a different
+        pickler class.
         """
         if serializeableModules is None:
             serializeableModules = []
         self.serializeableModules = serializeableModules
+        self.pickler_class = Pickler if pickler_class is None else pickler_class
         
     def dumps(self, obj, persistent_id = None, persistent_id_method = None, doCompress=True, mangleModuleName=None):
         """Pickle an object and return the pickle
@@ -1632,7 +1689,7 @@ class SPickleTools(object):
         :rtype: :class:`str`
         """
         l = []
-        pickler = Pickler(l, 2, serializeableModules=self.serializeableModules, mangleModuleName=mangleModuleName)
+        pickler = self.pickler_class(l, 2, serializeableModules=self.serializeableModules, mangleModuleName=mangleModuleName)
         if persistent_id is not None and persistent_id_method is not None:
             raise ValueError("At least one of persistent_id and persistent_id_method must be None")
         if persistent_id is not None:
@@ -1871,7 +1928,7 @@ class SPickleTools(object):
         try:
             rcls = rpycconnection.root.getmodule(self.__class__.__module__)
             rcls = getattr(rcls, self.__class__.__name__)
-        except ImportError, e:
+        except ImportError:
             LOGGER().debug("Remote side lacks the module, going to pickle it")
             import sPickle._sPickle
             pt = SPickleTools(serializeableModules=[sPickle, sPickle._sPickle])
