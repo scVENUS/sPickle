@@ -330,10 +330,7 @@ class ClassWithHostile__getattribute__(object):
         
 class PicklingTest(TestCase):
     """
-    This is the description of the class WfBaseTest. 
-    
-    Here comes the description of the class. The sole purpose
-    of this class is to act as an example for documenting a class.
+    Test pickling 
     """
     def run(self, result=None):
         self.dis = getattr(result, "showAll", False)
@@ -793,10 +790,9 @@ class PicklingTest(TestCase):
         return (obj, tif)
 
 
-    
+    #
     # Tests for module dictionaries
     #
-    
     def testModuleDict(self):
         orig = tabnanny
         self.moduleDictTest(orig)        
@@ -842,7 +838,9 @@ class PicklingTest(TestCase):
         self.assertTrue(type(wf_module_) is type(mod))
         self.assertIs(mod.__dict__, obj)
 
+    #
     # Tests for function and code objects
+    #
     
     def testWfFunction(self):
         self.wfFunctionTest(wf_module.isOk)
@@ -883,7 +881,9 @@ class PicklingTest(TestCase):
         # Todo: compare the other attributes of a function
         return obj
 
+    #
     # Tests for function creation
+    #
     def testTypeCode(self):
         p = self.pickler.dumps(types.CodeType)
         obj = self.pickler.loads(p)
@@ -1009,6 +1009,7 @@ class PicklingTest(TestCase):
 
     #
     # Tests for special objects and types
+    #
     def testTypeWrapperDescriptor(self):
         p = self.pickler.dumps(_sPickle.WRAPPER_DESCRIPTOR_TYPE)
         obj = self.pickler.loads(p)
@@ -1076,7 +1077,10 @@ class PicklingTest(TestCase):
         self.assertIsNot(restoredObj, obj)
         self.assertIs(restoredMethod.__self__, restoredObj)
         self.assertEqual(restoredMethod, getattr(restoredObj, methodName))
-        
+
+    #
+    # test pickling methods of object
+    #   
     def testObject__delattr__(self):
         orig = object.__delattr__
         p = self.dumpWithPreobjects(None,orig, dis=False)
@@ -1160,6 +1164,9 @@ class PicklingTest(TestCase):
         #
         # self.assertIs(obj, orig)
 
+    #
+    # Other special types
+    #
     def testModuleNew(self):
         orig = types.ModuleType.__new__
         p = self.dumpWithPreobjects(None, orig, dis=False)
@@ -1519,8 +1526,9 @@ class PicklingTest(TestCase):
         self.assertIs(obj.__self_class__, PlainSubClass)
 
 
+    #
     # Tests for pickling classes
-    
+    #
     def testClassicClass(self):
         class ClassicClass:
             anAttribute = None
@@ -1674,8 +1682,10 @@ class PicklingTest(TestCase):
         self.assertClassEquals(origCls, cls)
         return cls
         
+    
+    #
     # Import tests
-        
+    #    
     def testWfImports(self):
         orig = wf_module
         p = self.pickler.dumps(orig)
@@ -1685,8 +1695,9 @@ class PicklingTest(TestCase):
             self.assertIsInstance(module, str)
             self.assertEqual(len(module.split(" ")), 2)
 
+    #
     # Handling of resource objects (files, socket, socketpair)
-
+    #
     def testResources(self):
         openFile = open(os.devnull)
         closedFile = open(os.devnull, "wb")
@@ -1725,8 +1736,9 @@ class PicklingTest(TestCase):
             socket_.close()
             sp[0].close()
         
-        
+    #    
     # Test hostile objects
+    #
     def testClassWithHostile__getattr__(self):
         self.classCopyTest(ClassWithHostile__getattr__, False)
 
