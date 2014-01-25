@@ -921,8 +921,93 @@ class PicklingTest(TestCase):
         self.assertEqual(obj.co_lnotab, orig.co_lnotab)
         self.assertEqual(obj.co_stacksize, orig.co_stacksize)
         self.assertEqual(obj.co_flags, orig.co_flags)
-        
 
+    #
+    # Tests for pickling trace back and frame objects
+    #
+    def testTypeFrame(self):
+        orig = type(sys._getframe())
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testTypeTraceback(self):
+        try:
+            1/0
+        except Exception:
+            orig = type(sys.exc_info()[2])
+            sys.exc_clear()
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    @skipIf(isStackless, "stackless can pickle frames")
+    def testFrame_NoStackless(self):
+        f = sys._getframe()
+        orig = f
+        self.assertRaises(pickle.PicklingError, self.pickler.dumps, orig)
+
+    @skipIf(isStackless, "stackless can pickle frames")
+    def testTraceback_NoStackless(self):
+        try:
+            1/0
+        except Exception:
+            orig = sys.exc_info()[2]
+            sys.exc_clear()
+        self.assertRaises(pickle.PicklingError, self.pickler.dumps, orig)
+
+    @skipUnless(isStackless, "stackless only")
+    def testFrame_Stackless(self):
+        f = sys._getframe()
+        frames = []
+        while f is not None:
+            frames.append(f)
+            f = f.f_back
+        self.assertGreaterEqual(len(frames), 2)
+        orig = frames[-2]
+        p = self.dumpWithPreobjects(None,orig, dis=True)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIs(type(obj), type(orig))
+        self.assertIs(obj.f_builtins, orig.f_builtins)
+        self.assertIs(type(obj.f_code), type(orig.f_code))
+        self.assertIsNot(obj.f_code, orig.f_code)
+        self.assertEquals(obj.f_code.co_code, orig.f_code.co_code)
+        self.assertIs(obj.f_globals, orig.f_globals)
+        self.assertEquals(obj.f_lasti, orig.f_lasti)
+        self.assertEquals(obj.f_lineno, orig.f_lineno)
+        self.assertSetEqual(frozenset(obj.f_locals.keys()), frozenset(orig.f_locals.keys()))
+        self.assertEqual(obj.f_restricted, orig.f_restricted)
+
+    @skipUnless(isStackless, "stackless only")
+    def testTraceback_Stackless(self):
+        # we need an traceback without any unpickleable 
+        # frames. We use a thread
+        import threading
+        tb_list = []
+        def create_tb():
+            try:
+                1/0
+            except Exception:
+                tb_list.append(sys.exc_info()[2])
+                sys.exc_clear()
+        t=threading.Thread(target=create_tb, name=self.id())
+        t.start()
+        t.join()
+        orig = tb_list[0]
+        self.assertIsNone(orig.tb_next)
+
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        
+        self.assertIsNot(obj, orig)
+        self.assertIs(type(obj), type(orig))
+        self.assertIs(type(obj.tb_frame), type(orig.tb_frame))
+        self.assertEqual(obj.tb_lasti, orig.tb_lasti)
+        self.assertEqual(obj.tb_lineno, orig.tb_lineno)
+        self.assertIsNone(obj.tb_next)
+
+    #
     # Tests for special objects and types
     def testTypeWrapperDescriptor(self):
         p = self.pickler.dumps(_sPickle.WRAPPER_DESCRIPTOR_TYPE)

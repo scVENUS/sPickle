@@ -380,6 +380,9 @@ class Pickler(pickle.Pickler):
         self.dispatch[collections.OrderedDict] = self.saveOrderedDict.__func__
         self.dispatch[weakref.ReferenceType] = self.saveWeakref.__func__
         self.dispatch[super] = self.saveSuper.__func__
+        if not 'stackless' in sys.modules:
+            self.dispatch[types.FrameType] = self.save_Unpickleable.__func__
+            self.dispatch[types.TracebackType] = self.save_Unpickleable.__func__
 
         # auxiliary classes
         self.dispatch[self._ObjReplacementContainer] = self.save_ObjReplacementContainer.__func__
@@ -654,6 +657,10 @@ class Pickler(pickle.Pickler):
             self.original = original
             self.replacement = replacement
             
+    def save_Unpickleable(self, obj):
+        """Raise PicklingError"""
+        raise pickle.PicklingError("Can't pickle object: "+repr(obj))
+
     def save_ObjReplacementContainer(self, obj):
         """Save a :class:`_ObjReplacementContainer`"""
         replacement = obj.replacement
