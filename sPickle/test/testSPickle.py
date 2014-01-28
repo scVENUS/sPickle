@@ -328,6 +328,95 @@ class ClassWithHostile__getattribute__(object):
         
         raise Exception("This __getattribute__ always raises an exception: %r" % name)
         
+class ClassicNull:
+    """
+    Gotten from: http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/68205
+    
+    This is a very nasty class, it causes an infinite recursion!
+    """
+
+    def __init__(self, *args, **kwargs):
+        return None
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def __getattr__(self, mname):
+        return self
+
+    def __setattr__(self, name, value):
+        return self
+
+    def __delattr__(self, name):
+        return self
+
+    def __repr__(self):
+        return "<Null>"
+
+    def __str__(self):
+        return "Null"
+
+    def __len__(self):
+        return 0
+
+    def __getitem__(self):
+        return self
+
+    def __setitem__(self, *args, **kwargs):
+        pass
+
+    def write(self, *args, **kwargs):
+        pass
+
+    def __nonzero__(self):
+        return 0
+
+class Null(object):
+    """
+    Gotten from: http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/68205
+    
+    This is a very nasty class, it causes an infinite recursion!
+    """
+
+    def __init__(self, *args, **kwargs):
+        return None
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def __getattr__(self, mname):
+        return self
+
+    def __setattr__(self, name, value):
+        return self
+
+    def __delattr__(self, name):
+        return self
+
+    def __repr__(self):
+        return "<Null>"
+
+    def __str__(self):
+        return "Null"
+
+    def __len__(self):
+        return 0
+
+    def __getitem__(self):
+        return self
+
+    def __setitem__(self, *args, **kwargs):
+        pass
+
+    def write(self, *args, **kwargs):
+        pass
+
+    def __nonzero__(self):
+        return 0
+    
+    def __reduce__(self):
+        return (self.__class__, ([self],))
+
 class PicklingTest(TestCase):
     """
     Test pickling 
@@ -1768,6 +1857,15 @@ class PicklingTest(TestCase):
         self.assertIsNot(restored, orig)
         self.assertIsInstance(restored, orig.__class__)
 
+    def testNull(self):
+        orig = Null()
+        self.assertRaisesRegexp(RuntimeError, 'maximum recursion depth exceeded', self.pickler.dumps, orig)
+
+    def testClassicNull(self):
+        orig = ClassicNull()
+        self.assertRaisesRegexp(RuntimeError, 'maximum recursion depth exceeded', self.pickler.dumps, orig)
+
+
 class FailSaveTest(TestCase):
     def setUp(self):
         super(FailSaveTest, self).setUp()
@@ -1777,48 +1875,91 @@ class FailSaveTest(TestCase):
         self.unpickleable = UnpickleableClass()
         self.get_replacement_called = 0
         self.surrogateFactory = list
-        
+        self.expected_surrogate_test = None
+        self.expectedException = pickle.PicklingError
+
     def get_replacement(self, pickler, obj, exception):
         self.get_replacement_called += 1
         self.assertIs(pickler, self.pickler)
-        self.assertIs(obj, self.unpickleable)
-        self.assertIsInstance(exception, pickle.PicklingError)
-        return self.surrogateFactory(self.get_replacement_called)
+        self.assertIsInstance(exception, self.expectedException)
+        if obj is self.unpickleable:
+            return self.surrogateFactory(self.get_replacement_called, obj)
+        self.assertGreater(self.get_replacement_called, 1)
+        return exception
 
-    def pickleandunpickle(self, obj):
+    def pickleandunpickle(self, obj, dis=False):
         self.pickler.dump(obj)
-        return pickle.loads(self.file.getvalue())
-        
+        p = self.file.getvalue()
+        p = pickletools.optimize(p)
+        if dis:            
+            _sPickle.SPickleTools.dis(p)
+            print "len(pickle): ", len(p)
+        return pickle.loads(p)
+
     def testPickleable(self):
         orig = PlainClass('OK')
         obj = self.pickleandunpickle(orig)
         self.assertIsNot(obj, orig)
         self.assertIsInstance(obj, PlainClass)
         self.assertTrue(obj.isOk())
-        
-    def unpickleable_test(self):
+
+    def unpickleable_test(self, dis=False):
         orig = (self.unpickleable, {'unpickleable': self.unpickleable})
         orig[1]['orig'] = orig
-        
-        obj = self.pickleandunpickle(orig)
-        expected_surrogate = self.surrogateFactory(1)
-        
+
+        obj = self.pickleandunpickle(orig, dis=dis)
+
         self.assertIsNot(obj, orig)
         self.assertIsInstance(obj, tuple)
         self.assertEqual(len(obj), 2)
-        self.assertEqual(obj[0], expected_surrogate)
+        if self.expected_surrogate_test is None:
+            expected_surrogate = self.surrogateFactory(1, orig[0])
+            self.assertEqual(obj[0], expected_surrogate)
+        else:
+            self.expected_surrogate_test(obj[0])
         self.assertIsInstance(obj[1], dict)
         self.assertIs(obj[0], obj[1]['unpickleable'])
         self.assertIs(obj, obj[1]['orig'])
-        
+
     def testUnplickleableNormalSurrogate(self):
-        self.surrogateFactory = lambda x: [x]
+        self.surrogateFactory = lambda x,obj: [x]
         self.unpickleable_test()
 
     def testUnplickleableNone(self):
-        self.surrogateFactory = lambda x:None
+        self.surrogateFactory = lambda x,obj: None
         self.unpickleable_test()
-        
+
+    def testUnplickleableRecursive1(self):
+        self.surrogateFactory = lambda x,obj: [x, obj]
+        def expected_surrogate_test(obj):
+            self.assertIsInstance(obj, list)
+            self.assertEquals(len(obj), 2)
+            self.assertEquals(obj[0], 1)
+            self.assertIs(obj[1], obj)
+        self.expected_surrogate_test = expected_surrogate_test
+        self.unpickleable_test()
+
+    def testUnplickleableRecursive2(self):
+        self.surrogateFactory = lambda x,obj: (x, obj)
+        # a  tuple can't contain itself -> recursion
+        self.assertRaises(_sPickle.RecursionDetectedError, self.unpickleable_test)
+
+    def testUnplickleableObj(self):
+        self.surrogateFactory = lambda x,obj: obj
+        self.assertRaises(IntentionallyUnpicleableError, self.unpickleable_test)
+        self.assertEqual(self.get_replacement_called, 2)
+
+    def testNull(self):
+        self.unpickleable = Null()
+        self.surrogateFactory = lambda x,obj: [x]
+        self.unpickleable_test()
+
+    def testClassicNull(self):
+        self.unpickleable = ClassicNull()
+        self.surrogateFactory = lambda x,obj: [x]
+        self.unpickleable_test()
+
+
 class SPickleToolsTest(TestCase):
     def testModule_for_globals(self):
         pt = _sPickle.SPickleTools()

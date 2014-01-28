@@ -42,6 +42,7 @@ import tempfile
 import codecs
 import weakref
 import abc
+import contextlib
 
 try:
     from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
@@ -662,7 +663,10 @@ class Pickler(pickle.Pickler):
         raise pickle.PicklingError("Can't pickle object: "+repr(obj))
 
     def save_ObjReplacementContainer(self, obj):
-        """Save a :class:`_ObjReplacementContainer`"""
+        """Save a :class:`_ObjReplacementContainer`
+        
+        This method actually saves the replacement object.
+        """
         replacement = obj.replacement
         original = obj.original 
         if original is replacement:
@@ -680,7 +684,21 @@ class Pickler(pickle.Pickler):
             if x is None:
                 # not in the memo, add it. We replace the memo entry immediately below
                 self.memoize(original)
-            l = self.memo[id(replacement)][0]
+
+            try:
+                l = self.memo[id(replacement)]
+            except KeyError:
+                # happens, if replacement is a very simple type like
+                # None, Tru, False, ....
+                
+                # It is not a problem: the memo entry for a dummy object
+                # the object on the stack upon unpickling is still 
+                # replacement, because of self.save(replacement) a few lines above
+                dummy = object() 
+                self.memoize(dummy)
+                l = self.memo[id(dummy)][0]
+            else:
+                l = l[0]
             self.memo[origId] = (l, (original, replacement))
             return True
         elif isinstance(x[1], tuple) and 2 == len(x[1]):
@@ -821,20 +839,29 @@ class Pickler(pickle.Pickler):
             #   __import__(mangledModule, {},{}, (name,)).name
             self.save_reduce(getattr, (mod, name), obj=obj)
 
-    def save_function(self, obj):
+    @contextlib.contextmanager
+    def rollback_on_exception(self, ex=Exception):
         memo = self.memo
         writePos = len(self.writeList) 
         memoPos = len(memo)
         try:
-            return self.save_global(obj)
-        except pickle.PicklingError, e:
-            LOGGER().debug("Going to pickle function %r by value, because it can't be pickled as global: %s", obj, str(e))
+            yield
+        except ex:
             del self.writeList[writePos:]
             for k in memo.keys():
-                v= memo[k]
+                v = memo[k]
                 if isinstance(v, types.TupleType):
                     if v[0] >= memoPos:
                         del memo[k]
+            raise
+
+    def save_function(self, obj):
+        try:
+            with self.rollback_on_exception():
+                return self.save_global(obj)
+        except pickle.PicklingError, e:
+            LOGGER().debug("Going to pickle function %r by value, because it can't be pickled as global: %s", obj, str(e))
+
         # Check copy_reg.dispatch_table
         reduce = pickle.dispatch_table.get(type(obj))
         if reduce:
@@ -1453,11 +1480,11 @@ class Pickler(pickle.Pickler):
         Key :attr:`ANALYSE_OBJECT_KEY`
            the object to be pickled. This item is always present.
 
-        Key :attr:`ANALYSE_MEMO_KEY`
+        Key :attr:`ANALYSE_DICT_OF_KEY`
            This item is present, if the object to be pickled is the __dict__ attribute of a another
            object. The value is the object, that has the __dict__ attribute.
 
-        Key :attr:`ANALYSE_DICT_OF_KEY`
+        Key :attr:`ANALYSE_MEMO_KEY`
            If the object to be pickled has already been added to the memo,
            the value of this item is the memo key.
 
@@ -1484,10 +1511,10 @@ class Pickler(pickle.Pickler):
             # 2. locate the pickler object
             pickler = None
             fr = fr1
-            savecode = cls.save.im_func.func_code
+            savecode = Pickler.save.im_func.func_code
             dumpcode = cls.dump.im_func.func_code
 
-            # A note abaout stack analysis: it is important not to access
+            # A note about stack analysis: it is important not to access
             # frame.f_locals unless absolutely necessary. Accessing f_locals creates a 
             # new dictionary and this dictionary belongs to a frame at a higher stack level
             # This could create reference cycles. Therefore we test the code object prior 
@@ -1572,6 +1599,12 @@ class Pickler(pickle.Pickler):
             m = d.get(self.ANALYSE_MEMO_KEY, "n.a.")
             LOGGER().info("Thing to be pickled id=%d, memo-key=%s, type=%s: %s" % (i, m, t, s))
 
+class RecursionDetectedError(PicklingError):
+    def __init__(self, msg, oid, level):
+        super(RecursionDetectedError, self).__init__(msg, oid, level)
+        self.oid = oid
+        self.level = int(level)
+
 class FailSavePickler(Pickler):
     """
     A failsave variant of class :class:`Pickler`.
@@ -1584,27 +1617,83 @@ class FailSavePickler(Pickler):
     as attribute 'get_replacement' or derive a create your own subclass
     of :class:`FailSavePickler` and override method :meth:`get_replacement`.
     """
+    def dump(self, obj):
+        self.__recursion_counter = 0
+        self.__object_replacements = {}
+        Pickler.dump(self, obj)
+    
     def save(self, obj):
         super_save = Pickler.save
+        self.__recursion_counter += 1
         try:
-            super_save(self, obj)
-        except pickle.PicklingError, e:
-            replacement = self.get_replacement(self, obj, e)
-            if replacement is e:
-                raise
-            super_save(self, replacement)
-            # and now for the dirty part: fake the memo entry for obj
-            # provided the replacement has a memo entry
+            if self.__recursion_counter % 10 == 0:
+                self.detect_recursion()
             try:
-                unpickler_key = self.memo[id(replacement)][0]
-            except KeyError:
-                # Very simple objects like None, True, False etc 
-                # don't have memo entries.
-                pass
-            else:
                 oid = id(obj)
-                assert oid not in self.memo
-                self.memo[oid] = (unpickler_key, obj)
+                obj = self.__object_replacements[oid].replacement
+            except KeyError:
+                pass
+            try:
+                with self.rollback_on_exception():
+                    return super_save(self, obj)
+            except Exception, e:
+                if (isinstance(e, pickle.PickleError) and not 
+                    isinstance(e, (pickle.PicklingError, pickle.UnpicklingError))):
+                    # internal problems of the pickler and backtracking exceptions
+                    raise
+                if isinstance(e, RecursionDetectedError):
+                    if e.oid != oid:
+                        raise
+                    e.level -= 1
+                    if e.level > 0:
+                        raise
+
+                if oid in self.__object_replacements:
+                    # exception on pickling the replacement 
+                    raise
+                replacement = self.get_replacement(self, obj, e)
+                if replacement is e:
+                    raise
+            
+                orc = self._ObjReplacementContainer(obj, replacement)
+                self.__object_replacements[oid] = orc
+                try:
+                    return super_save(self, orc)
+                finally:
+                    del self.__object_replacements[oid]
+
+        finally:
+            self.__recursion_counter -= 1
+
+    def detect_recursion(self):
+        list_of_dicts = self.analysePicklerStack(sys._getframe(1))
+        
+        # Idea: analyse the stack and get a list of objects in progress.
+        # We try to detect a periodic pattern on the stack. A periodic pattern is a 
+        # sequence of objects to be saved, that repeats itself ad infinitum
+        #
+        # Proposition 1:
+        # An object, that already has a memo entry, can't be part of a periodic
+        # pattern.
+        # Proof: If an object has a memo entry, the next call to pickler.save() will
+        #        return immediately. 
+        count = {}
+        oids = []
+        for d in list_of_dicts:
+            if self.ANALYSE_MEMO_KEY in d:
+                continue
+            oid = id(d[self.ANALYSE_OBJECT_KEY])
+            try:
+                count[oid] += 1
+            except KeyError:
+                count[oid] = 1
+            oids.append(oid)
+        oids.reverse()
+        for oid in oids:
+            if count[oid] > 2:
+                raise RecursionDetectedError("Pickler recursion detected", oid, count[oid])
+        return
+            
 
     def get_replacement(self, pickler, obj, exception):
         """
