@@ -1054,7 +1054,7 @@ class PicklingTest(TestCase):
             f = f.f_back
         self.assertGreaterEqual(len(frames), 2)
         orig = frames[-2]
-        p = self.dumpWithPreobjects(None,orig, dis=True)
+        p = self.dumpWithPreobjects(None,orig, dis=False)
         obj = self.pickler.loads(p)[-1]
         self.assertIsNot(obj, orig)
         self.assertIs(type(obj), type(orig))
