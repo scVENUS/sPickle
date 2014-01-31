@@ -381,6 +381,7 @@ class Pickler(pickle.Pickler):
         self.dispatch[collections.OrderedDict] = self.saveOrderedDict.__func__
         self.dispatch[weakref.ReferenceType] = self.saveWeakref.__func__
         self.dispatch[super] = self.saveSuper.__func__
+        self.dispatch[types.MethodType] = self.saveInstanceMethod.__func__
         if not 'stackless' in sys.modules:
             self.dispatch[types.FrameType] = self.save_Unpickleable.__func__
             self.dispatch[types.TracebackType] = self.save_Unpickleable.__func__
@@ -1003,6 +1004,64 @@ class Pickler(pickle.Pickler):
         if state is not None:
             save(state)
             write(pickle.BUILD)
+
+    def saveInstanceMethod(self, obj):
+        memo = self.memo
+        objId = id(obj)
+
+        # in order to avoid a possible recursion, save the function, class and instance first
+        im_class = obj.im_class
+        if im_class is not None and id(im_class) not in memo:
+            self.save(im_class)
+            self.write(pickle.POP)
+
+            # In case im_class refers to obj
+            x = memo.get(objId)
+            if x:
+                self.write(self.get(x[0]))
+                return
+
+        im_self = obj.im_self
+        if im_self is not None and id(im_self) not in memo:
+            self.save(im_self)
+            self.write(pickle.POP)
+            # In case the closure refers to obj
+            x = memo.get(objId)
+            if x:
+                self.write(self.get(x[0]))
+                return
+
+        im_func = obj.im_func
+        if im_func and id(im_func) not in memo:
+            # try to get the function from the class.
+            from_class = False
+            if im_class is not None:
+                try:
+                    m = getattr(im_class, im_func.__name__)
+                except Exception:
+                    pass
+                else:
+                    if m is im_func:
+                        args = (im_class, im_func.__name__)
+                        with self.rollback_on_exception():
+                            self.save_reduce(getattr, args, obj=im_func)
+                            from_class = True
+                    elif isinstance(m, types.MethodType) and m.im_func is im_func:
+                        with self.rollback_on_exception():
+                            args = (im_class, im_func.__name__)
+                            args = (SPickleTools.reducer(getattr, args), 'im_func')
+                            self.save_reduce(getattr, args, obj=im_func)
+                            from_class = True
+            if not from_class:
+                self.save(im_func)
+            self.write(pickle.POP)
+            # In case the defaults refers to obj
+            x = memo.get(objId)
+            if x:
+                self.write(self.get(x[0]))
+                return
+            
+        self.save_reduce(types.MethodType, (im_func, im_self, im_class), obj=obj)
 
     def saveFunction(self, obj):
         memo = self.memo

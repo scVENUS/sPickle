@@ -970,6 +970,81 @@ class PicklingTest(TestCase):
         # Todo: compare the other attributes of a function
         return obj
 
+    def testTypeInstancemethod(self):
+        p = self.pickler.dumps(types.MethodType)
+        obj = self.pickler.loads(p)
+        self.assertTrue(obj is types.MethodType)
+
+    def unboundInstancemethodTest(self, cls):
+        orig = cls.isOk
+        self.assertIsInstance(orig, types.MethodType)
+        self.assertIsNone(orig.im_self)
+
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIs(type(obj), type(orig))
+        self.assertIs(obj.im_func, orig.im_func)
+        self.assertIs(obj.im_class, orig.im_class)
+        self.assertIsNone(obj.im_self)
+
+    def boundInstancemethodTest(self, cls, function_by_value=False):
+        orig = cls('OK').isOk
+        self.assertIsInstance(orig, types.MethodType)
+        self.assertIsNotNone(orig.im_self)
+
+        p = self.dumpWithPreobjects(None,orig, dis=False)
+
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIs(type(obj), type(orig))
+        if function_by_value:
+            self.assertIsNot(obj.im_func, orig.im_func)
+            self.assertIs(type(obj.im_func), type(orig.im_func))
+            self.assertIsNot(obj.im_class, orig.im_class)
+            self.assertIs(type(obj.im_class), type(orig.im_class))
+        else:
+            self.assertIs(obj.im_func, orig.im_func)
+            self.assertIs(obj.im_class, orig.im_class)
+            self.assertIs(type(obj.im_self), type(orig.im_self))
+        self.assertIsNot(obj.im_self, orig.im_self)
+        self.assertIs(obj(), True)
+
+    def testUnboundInstancemethod1(self):
+        self.unboundInstancemethodTest(PlainClass)
+
+    def testBoundInstancemethod1(self):
+        self.boundInstancemethodTest(PlainClass)
+
+    def testUnboundInstancemethod2(self):
+        self.unboundInstancemethodTest(PlainSubClass)
+
+    def testBoundInstancemethod2(self):
+        self.boundInstancemethodTest(PlainSubClass)
+
+    def testUnboundInstancemethod3(self):
+        self.unboundInstancemethodTest(PlainClassicClass)
+
+    def testBoundInstancemethod3(self):
+        self.boundInstancemethodTest(PlainClassicClass)
+
+    def testBoundInstancemethod4(self):
+        class C(object):
+            def __init__(self, arg):
+                pass
+            def isOk(self):
+                return True
+        self.boundInstancemethodTest(C, function_by_value=True)
+
+    def testBoundInstancemethod5(self):
+        class C(object):
+            def __init__(self, arg):
+                pass
+            isOk = PlainClass('OK').isOk
+        self.boundInstancemethodTest(C)
+
+
     #
     # Tests for function creation
     #
