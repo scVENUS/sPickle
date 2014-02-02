@@ -1911,7 +1911,7 @@ class SPickleTools(object):
         return pickle
     
     @classmethod
-    def loads_with_external_ids(cls, str, idmap, useCPickle=True):
+    def loads_with_external_ids(cls, str, idmap, useCPickle=True, unpickler_class=None):
         """
         Unpickle an object from a string.
         
@@ -1925,6 +1925,8 @@ class SPickleTools(object):
         :param object useCPickle: if True in a boolean context, use the Unpickler from the 
                            module :mod:`cPickle`. Otherwise use the much slower Unpickler from 
                            the module :mod:`pickle`.
+        :param unpickler_class: the unpickler class to be used. If this parameter is given, 
+                           the value of *useCPickle* is ignored.
         :return: the reconstructed object
         :rtype: object
         """ 
@@ -1933,10 +1935,10 @@ class SPickleTools(object):
                 return idmap[oid]
             except KeyError:
                 raise cPickle.UnpicklingError("Invalid id %r" % (oid,))
-        return cls.loads(str, persistent_load, useCPickle=useCPickle)
+        return cls.loads(str, persistent_load, useCPickle=useCPickle, unpickler_class=unpickler_class)
     
     @classmethod
-    def loads(cls, str, persistent_load=None, useCPickle=True):
+    def loads(cls, str, persistent_load=None, useCPickle=True, unpickler_class=None):
         """
         Unpickle an object from a string.
 
@@ -1949,14 +1951,18 @@ class SPickleTools(object):
         :param object useCPickle: if True in a boolean context, use the Unpickler from the 
                            module :mod:`cPickle`. Otherwise use the much slower Unpickler from 
                            the module :mod:`pickle`.
+        :param unpickler_class: the unpickler class to be used. If this parameter is given, 
+                           the value of *useCPickle* is ignored.
         :return: the reconstructed object
         :rtype: object        
         """
         if str.startswith("BZh9"):
             str = decompress(str)
         file = StringIO(str)
-        p = cPickle if useCPickle else pickle
-        unpickler = p.Unpickler(file)
+        if unpickler_class is None:
+            p = cPickle if useCPickle else pickle
+            unpickler_class = p.Unpickler
+        unpickler = unpickler_class(file)
         if persistent_load is not None:
             unpickler.persistent_load = persistent_load
         return unpickler.load()
