@@ -23,7 +23,7 @@ if sys.version_info < (2, 7):
     print 'ERROR: sPickle requires at least Python 2.7 to run.'
     sys.exit(1)
 
-    
+
 from conf import release
 
 setup(
@@ -38,13 +38,12 @@ setup(
     # don't forget to add these files to MANIFEST.in too
     package_data={'sPickle': ['examples/*.py']},
 
-    long_description=
-"""
+    long_description="""
 sPickle is an extended version of the pickle module
 ---------------------------------------------------
 
 It supports pickling of modules and many resources the standard pickler can't
-cope with. 
+cope with.
 
 This version requires Python 2.7. Unfortunately, there is currently no
 Python 3 version.
@@ -57,17 +56,16 @@ Git repository: git://github.com/akruis/sPickle.git
           "Programming Language :: Python :: 2.7",
           "Environment :: Other Environment",
           "Operating System :: OS Independent",
-          "Development Status :: 4 - Beta", # hasn't been tested outside of flowGuide2
+          "Development Status :: 4 - Beta",  # hasn't been tested outside of flowGuide2
           "Intended Audience :: Developers",
           "Topic :: Software Development :: Libraries :: Python Modules",
       ],
       keywords='pickling sPickle pickle stackless',
       license='Apache Software License',
       install_requires=[
-        'RPyC>=3.2.2',
-        'ssh>=1.7.14'
+        # for examples and tests ...
+        # 'RPyC>=3.2.2', 'ssh>=1.7.14'
       ],
       platforms="any",
-      test_suite="sPickle"
-    
+      test_suite="sPickle",
     )

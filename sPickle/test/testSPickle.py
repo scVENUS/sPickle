@@ -48,17 +48,23 @@ except ImportError:
 else:
     isStackless = True
 
-
 try:
     import gtk
 except ImportError:
     gtk = None
 
-logging.basicConfig(level=logging.INFO)
+try:
+    import rpyc
+    del rpyc
+    RPYC_AVAILABLE = True
+except ImportError:
+    RPYC_AVAILABLE = False
 
+logging.basicConfig(level=logging.INFO)
 
 from .. import _sPickle
 from . import wf_module
+
 
 class PEP302ImportDetector(object):
     def __init__(self, raiseOn=None):
@@ -444,19 +450,21 @@ class PicklingTest(TestCase):
         package_dict.update(self.package_dict)
 
     # imported due to a lazy import mechanism in module "email"
-    IMPORTS_TO_IGNORE = ('email.', 'uu', 'quopri', 'imghdr', 'sndhdr', 'encodings', 'urllib', 'calendar', 'datetime')
+    IMPORTS_TO_IGNORE = ('email.', 'uu', 'quopri', 'imghdr', 'sndhdr',
+                         'encodings', 'urllib', 'calendar', 'datetime',
+                         'nturl2path', 'ssl', 'base64', 'textwrap')
+
     def dumpWithPreobjects(self, preObjects, *obj, **kw):
         """Dump one or more objects.
-        
+
         Returns the dump of the 2-tuple (preObjects, obj[0] if len(obj) == 1 else obj )
         Writes the opcodes to sys.stdout, if kw['dis'] evaluates to True.
         Writes the opcodes to sys.stderr, if an error occurs.
-    
         """
-        
+
         dis = kw.get("dis")
         try:
-            toBeDumped = (preObjects, obj[0] if len(obj) == 1 else obj )
+            toBeDumped = (preObjects, obj[0] if len(obj) == 1 else obj)
 
             # ensure that the pickler does not touch sys.modules more than required
             with PEP302ImportDetector(raiseOn=kw.get("raiseOn")) as detector:
@@ -465,7 +473,7 @@ class PicklingTest(TestCase):
                 sys_modules2 = dict(sys.modules)
             imports = set()
             for n in detector.imports:
-                sys_modules2.pop(n,None)
+                sys_modules2.pop(n, None)
                 for i in self.IMPORTS_TO_IGNORE:
                     if n.startswith(i):
                         break
@@ -473,7 +481,7 @@ class PicklingTest(TestCase):
                     imports.add(n)
             self.assertEqual(sys_modules, sys_modules2)
             self.assertEqual(imports, set())
-            
+
             self.pickler.dis(p, out=StringIO())
         except:
             exinfo = sys.exc_info()
@@ -1336,8 +1344,8 @@ class PicklingTest(TestCase):
         p = self.dumpWithPreobjects(None, orig, dis=False)
         obj = self.pickler.loads(p)[-1]
         self.assertIs(obj, orig)
-        
-        
+
+    @skipUnless(RPYC_AVAILABLE, "test requires package RPyC")
     def testRpycBuiltinTypes(self):
         from rpyc.core.netref import _builtin_types
         errors = []
@@ -2068,8 +2076,3 @@ class PythonBugsTest(TestCase):
             self.fail("Python bug http://bugs.python.org/issue18015 detected. See README.txt for a work around.")
         self.assertIsInstance(nt, NT)
         self.assertTupleEqual(nt, (1,))
-        
-
-if __name__ == "__main__":
-    import unittest
-    unittest.main()
