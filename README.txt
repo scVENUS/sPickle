@@ -74,11 +74,16 @@ No further plans currently
 Changes
 =======
 
-Version 0.1.x
+Version 0.1.4
 -------------
-2014-01-24
+2014-02-07
 New class FailSavePickler. It is a subclass of Pickler, that can replace
 otherwise unpickleable objects by surrogates.
+
+Added support for pickling bound and unbound instance methods.
+
+sPickle no longer requires "ssh" and "rpyc". Both modules are
+are required to run the examples.
 
 Version 0.1.3
 -------------
