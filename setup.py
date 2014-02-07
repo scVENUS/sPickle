@@ -23,8 +23,10 @@ if sys.version_info < (2, 7):
     print 'ERROR: sPickle requires at least Python 2.7 to run.'
     sys.exit(1)
 
-
-from conf import release
+for line in open('conf.py'):
+    if line.startswith('release = '):
+        exec(line)
+        break
 
 setup(
     name='sPickle',
