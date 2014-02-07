@@ -1506,7 +1506,7 @@ class Pickler(pickle.Pickler):
 
     def saveWeakref(self, obj):
         r = obj()
-        if r:
+        if r is not None:
             self.save_reduce(weakref.ref, (r,), obj=obj)
         else:
             # use an new object.
