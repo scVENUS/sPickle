@@ -18,10 +18,10 @@
 
 """
 This module contains a few functions and classes, that help
-you the build RPyC connections using the ssh client (former paramiko client).
+you to build RPyC connections using the paramiko ssh client.
 
 Unfortunately this code is not completely documented. See the
-documentation of ssh and RPyC for details.
+documentation of paramiko and RPyC for details.
 """
 
 from __future__ import absolute_import
@@ -34,7 +34,7 @@ import collections
 
 import rpyc
 SERVER_FILE = os.environ.get("RPYC_SERVER_FILE", os.path.join(os.path.dirname(rpyc.__file__), "scripts", "rpyc_classic.py"))
-import ssh
+import paramiko
 import logging
 LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class SshRpycStream(rpyc.SocketStream):
         super(SshRpycStream, self).__init__(sock)
 
 
-class RpycParamicoChannel(ssh.Channel):
+class RpycParamicoChannel(paramiko.Channel):
     def __init__(self, *args, **kw):
         self._stdoutPipe = None
         super(RpycParamicoChannel, self).__init__(*args, **kw)
@@ -80,7 +80,7 @@ class RpycParamicoChannel(ssh.Channel):
             if self._stdoutPipe is not None:
                 return self._stdoutPipe.fileno()
             # create the pipe and feed in any existing data
-            self._stdoutPipe = ssh.pipe.make_pipe()
+            self._stdoutPipe = paramiko.pipe.make_pipe()
             self.in_buffer.set_event(self._stdoutPipe)
             return self._stdoutPipe.fileno()
         finally:
@@ -108,17 +108,17 @@ def newRPyCConnectionOverSsh(command, host, username, password):
         # convert the argv string vector to a single string
         command = argv2command(command)
 
-    client = ssh.SSHClient()
+    client = paramiko.SSHClient()
     client.load_system_host_keys()
-    client.set_missing_host_key_policy(ssh.AutoAddPolicy())
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(host, username=username, password=password)  # there are more authentication options
     transport = client.get_transport()
-    transport.setName("ssh.Transport for rpyc stream")
+    transport.setName("paramiko.Transport for rpyc stream")
     channel = transport.open_session()
     channel.exec_command(command)
 
     # append stderr to sys.stderr or self.stderr
-    # the thread must hold a copy of the ssh client object in order to keep the connection alive
+    # the thread must hold a copy of the paramiko client object in order to keep the connection alive
     closeEvent = threading.Event()
     closeEvent.clear()
     stderrThread = threading.Thread(target=__copy2stderr,
@@ -127,14 +127,14 @@ def newRPyCConnectionOverSsh(command, host, username, password):
     stderrThread.daemon = False  # keep the interpreter alive until this thread is done
     stderrThread.start()
     prs = SshRpycStream(channel)
-    # keep the ssh-client alive. This is very important, otherwise the connection will shutdown
+    # keep the paramiko-client alive. This is very important, otherwise the connection will shutdown
     prs._sshClient = client
     c = rpyc.connect_stream(prs, rpyc.SlaveService)
     return c
 
 
 def __copy2stderr(out, chanel, sshclient, closeEvent):
-    """Copy the stderr sub chanel of the ssh connection to out or sys.stderr"""
+    """Copy the stderr sub chanel of the paramiko connection to out or sys.stderr"""
     length = 10000
     try:
         while not closeEvent.is_set():
@@ -183,7 +183,7 @@ def _hello_world(argv):
     print "Command line is: %r" % argv
 
     username = getpass.getuser()
-    password = None  # I'm using an ssh agent
+    password = None  # I'm using a ssh agent
 
     connection = newRPyCConnectionOverSsh(argv, host, username, password)
     try:
