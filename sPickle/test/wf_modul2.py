@@ -17,11 +17,12 @@
 #
 
 from __future__ import absolute_import
-import sys
-import re
+import sys  # @UnusedImport
+import re  # @UnusedImport
 
 
 __module_must_be_pickled__ = True
+
 
 def isOk():
     return True

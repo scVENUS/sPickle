@@ -18,9 +18,9 @@
 
 """Example 1: checkpoint a running program.
 
-This example demonstrate how to checkpoint and restart 
-a program. 
-"""   
+This example demonstrate how to checkpoint and restart
+a program.
+"""
 
 from __future__ import absolute_import
 import sys
@@ -33,6 +33,7 @@ import checkpointing
 import logging
 LOGGER = logging.getLogger(__name__)
 
+
 def long_running_function_with_checkpointing(checkpointSupport, *args, **keywords):
     print "At program start"
     print "  arguments: ", args
@@ -43,7 +44,7 @@ def long_running_function_with_checkpointing(checkpointSupport, *args, **keyword
         print " ", i,
         time.sleep(0.5)
         sys.stdout.flush()
-        
+
         isCmdResult, result = checkpointSupport.forkAndCheckpoint()
         if isCmdResult:
             # result is the pickle
@@ -65,41 +66,40 @@ def long_running_function_with_checkpointing(checkpointSupport, *args, **keyword
             print "Computing ...",
     print ""
     print "Done."
-    
-    return 0 # posix exit code
+
+    return 0  # posix exit code
 
 
 def main(argv):
     """Run this example
-    
+
     Usage: main [ "start" | "resume" ] ...
 
     """
     checkpointFile = "example1.pickle"
     mode = argv.pop(0)
     if mode == "start":
-                
         from sPickle import SPickleTools
-        # always serialize __main__, because the main used during a resume 
+        # always serialize __main__, because the main used during a resume
         # operation is most likely a different module loaded from a different file
         pt = SPickleTools(serializeableModules=['__main__'])
-        return checkpointing.runCheckpointable(pt.dumps, 
-                                               long_running_function_with_checkpointing, 
-                                               checkpointFile = checkpointFile, 
+        return checkpointing.runCheckpointable(pt.dumps,
+                                               long_running_function_with_checkpointing,
+                                               checkpointFile=checkpointFile,
                                                *argv)
 
     elif mode == "resume":
-        
+
         # Resume the execution of the checkpoint
         # Note: This mode 2 does not define any functional logic.
-        #       You can also use the checkpointing module to resume example 
+        #       You can also use the checkpointing module to resume example
 
         return checkpointing.resumeCheckpoint(open(checkpointFile, "rb").read(), *argv)
 
     else:
-        print >> sys.stderr, 'Usage: %s: [ "start" | "resume" ] ...' % (os.path.basename(__file__),) 
+        print >> sys.stderr, 'Usage: %s: [ "start" | "resume" ] ...' % (os.path.basename(__file__),)
         return 1
-        
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.WARN)
     main(sys.argv[1:])

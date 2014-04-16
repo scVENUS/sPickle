@@ -1,4 +1,4 @@
-# 
+#
 # -*- coding: utf-8 -*-
 #
 #  Copyright (c) 2012 science+computing ag
@@ -13,5 +13,5 @@
 #
 
 from __future__ import absolute_import
-NAME=__name__
-__name__ = "modified name" 
+NAME = __name__
+__name__ = "modified name"  # @ReservedAssignment

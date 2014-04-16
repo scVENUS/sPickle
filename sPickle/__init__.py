@@ -22,16 +22,16 @@
 =========
 
 The module sPickle is an enhanced version of the standard module :mod:`pickle`.
-It provides an improved :class:`Pickler` class and a 
+It provides an improved :class:`Pickler` class and a
 utility class :class:`SPickleTools`.
 
 The sPickle package tries to push the limits for pickling. The implementation
 tries to create correct pickles, but it does not try to be efficient or portable or
-nice to read or ... Consider it a proof of concept, a demonstration, that shows 
+nice to read or ... Consider it a proof of concept, a demonstration, that shows
 what could be done.
 
 .. warning::
-   Although the author is using the sPickle package in production, it is 
+   Although the author is using the sPickle package in production, it is
    more or less untested outside the specific environment it was written for.
 
 .. note::
@@ -48,8 +48,6 @@ what could be done.
 
 .. autoexception:: StacklessTaskletReturnValueException
 
-
-
 """
 
 
@@ -57,12 +55,12 @@ from __future__ import absolute_import
 
 from pickle import *
 del Pickler
-from ._sPickle import ( Pickler,
-                        SPickleTools,
-                        MODULE_TO_BE_PICKLED_FLAG_NAME,
-                        StacklessTaskletReturnValueException,
-                        RESOURCE_TYPES,
-                        FailSavePickler )
+from ._sPickle import (Pickler,  # @Reimport
+                       SPickleTools,
+                       MODULE_TO_BE_PICKLED_FLAG_NAME,
+                       StacklessTaskletReturnValueException,
+                       RESOURCE_TYPES,
+                       FailSavePickler)
 from pickle import __all__
 
 __all__ = __all__[:]

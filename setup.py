@@ -30,7 +30,7 @@ for line in open('conf.py'):
 
 setup(
     name='sPickle',
-    version=release,
+    version=release,  # @UndefinedVariable
     description='Extended Pickler with special support for Stackless Python',
     author='Anselm Kruis',
     author_email='a.kruis@science-computing.de',

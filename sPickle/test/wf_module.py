@@ -22,5 +22,6 @@ from __future__ import absolute_import
 
 from . import wf_modul2
 
+
 def isOk():
     return wf_modul2.isOk()

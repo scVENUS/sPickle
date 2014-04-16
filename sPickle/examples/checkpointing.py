@@ -22,43 +22,44 @@ Rudimentary checkpointing support.
 This module provides two functions `runCheckpointable`
 and `resumeCheckpoint`, that can be used to checkpoint
 and resume a (single threaded) python program.
-"""   
+"""
 
 from __future__ import absolute_import
 import sys
 import types
 import sPickle
 import stackless
-import inspect
+
 
 class _CheckpointSupport(object):
     """Handler class"""
     CMD_CHECKPOINT = "checkpoint"
+
     def __init__(self):
         self._restoreTraceFunc = None
-        
+
     def _switchTraceFunc(self, trace):
         oldTraceFunc = sys.gettrace()
         func = sys.settrace
         # in case of the PyDev debugger, we have to mangle the function a little bit.
-        # This is kind of black magic, but unfortunately, I don't know any better way 
+        # This is kind of black magic, but unfortunately, I don't know any better way
         # to do it
         if isinstance(func, types.MethodType):
             func = getattr(sys.settrace, "__func__")
         func = getattr(func, "func_globals", {}).get("SetTrace", func)
-        self._restoreTraceFunc = lambda : func(oldTraceFunc)
+        self._restoreTraceFunc = lambda: func(oldTraceFunc)
         if trace:
             func(trace)
             trace = None
 
-    def _taskletRun(self, trace, callable, args, keywords):
+    def _taskletRun(self, trace, callable_, args, keywords):
         self._switchTraceFunc(trace)
         try:
-            raise sPickle.StacklessTaskletReturnValueException(callable(self, *args, **keywords))
+            raise sPickle.StacklessTaskletReturnValueException(callable_(self, *args, **keywords))
         finally:
             self._restoreTraceFunc()
             self._restoreTraceFunc = None
-            
+
     def _loop(self, tasklet, pickler):
         try:
             while True:
@@ -74,20 +75,19 @@ class _CheckpointSupport(object):
                 tasklet.tempval = (True, sys.gettrace(), result)
         except sPickle.StacklessTaskletReturnValueException, e:
             return e.value
-        
-        
+
     def forkAndCheckpoint(self, cmd=CMD_CHECKPOINT):
         """Checkpoint the current thread.
-        
-        This method creates a checkpoint of the current thread. 
+
+        This method creates a checkpoint of the current thread.
         The method returns two times with different return values.
-        If you invoke this method, it returns the tuple `True`, 
-        `checkpoint`. `checkpoint` is the pickled state of 
-        the current thread as a byte string. 
-        
-        If you resume the program using the 
+        If you invoke this method, it returns the tuple `True`,
+        `checkpoint`. `checkpoint` is the pickled state of
+        the current thread as a byte string.
+
+        If you resume the program using the
         `resumeCheckpoint` function, it returns the tuple
-        `False`, `args_keywords`. args_keywords is a tuple containing the 
+        `False`, `args_keywords`. args_keywords is a tuple containing the
         *args and **keywords parameters given to the resumeCheckpoint function.
         """
         self._restoreTraceFunc()
@@ -99,29 +99,29 @@ class _CheckpointSupport(object):
 
         return (isCmdResult, result)
 
-        
-def runCheckpointable(pickler, callable, *args, **keywords):
-    """Run callable as a checkpointable tasklet.
-    
-    `pickler` must be a function or method, that takes an object 
+
+def runCheckpointable(pickler, callable_, *args, **keywords):
+    """Run callable_ as a checkpointable tasklet.
+
+    `pickler` must be a function or method, that takes an object
     and returns a pickle of the object.
-    `callable` can be any callable, with at least one positional 
+    `callable_` can be any callable, with at least one positional
     parameter. This first parameter receives a _CheckpointSupport object,
-    that provides a method `forkAndCheckpoint`. Additional parameters of 
-    `callable` can be set using `args` and `keywords`.
-    """ 
-    
+    that provides a method `forkAndCheckpoint`. Additional parameters of
+    `callable_` can be set using `args` and `keywords`.
+    """
     checkpointSupport = _CheckpointSupport()
     tasklet = stackless.tasklet(checkpointSupport._taskletRun)
-    tasklet.setup(sys.gettrace(), callable, args, keywords)
+    tasklet.setup(sys.gettrace(), callable_, args, keywords)
     tasklet.tempval = None
     return checkpointSupport._loop(tasklet, pickler)
 
+
 def resumeCheckpoint(checkpoint, *args, **keywords):
     """Resume the execution of a checkpoint.
-    
-    The `checkpoint` parameter must be the string you 
-    got from the method `forkAndCheckpoint`. 
+
+    The `checkpoint` parameter must be the string you
+    got from the method `forkAndCheckpoint`.
     """
     pt = sPickle.SPickleTools()
     # pt.dis(checkpoint, sys.stdout)
@@ -136,14 +136,14 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.WARN)
     import argparse
     parser = argparse.ArgumentParser(description="Resume a check-pointed program.")
-    g=parser.add_mutually_exclusive_group(required=True)
+    g = parser.add_mutually_exclusive_group(required=True)
     g.add_argument("--demo", action="store_true", help='do not resume a program, but run the demo')
     g.add_argument("--stdin", action="store_true", help='read the checkpoint from stdin')
     g.add_argument("checkpoint_file", nargs='?', help='name of the checkpoint file')
     parser.add_argument('--dis', action="store_true", help='dump the disassembled checkpoint to stdout')
     parser.add_argument('args', help='arguments given to the resumed program', nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    
+
     if args.demo:
         def sample(checkpointSupport):
             internalState = 1
@@ -158,17 +158,17 @@ if __name__ == "__main__":
                 print "Internal state is ", internalState
             print "Done"
             return 0
-        
+
         # the directory sPickle/examples is not in sys.path, therefore
-        # it is not possible to import modules from this directory. 
+        # it is not possible to import modules from this directory.
         # Therefore ask the pickler to serialise those modules.
         pt = sPickle.SPickleTools(serializeableModules=["sPickle/examples"])
-        
+
         checkpoint = runCheckpointable(pt.dumps, sample, *args.args)
         while isinstance(checkpoint, str):
             checkpoint = resumeCheckpoint(checkpoint)
         sys.exit(checkpoint)
-    
+
     # regular code
     if args.stdin:
         try:
