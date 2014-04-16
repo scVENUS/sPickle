@@ -15,7 +15,8 @@ Requirements
 ------------
 
 * Python 2.7
-* RPyC is used in the unit tests
+* RPyC is used in the unit tests; the test is skipped, if 
+  import rpyc fails.
 
 (Sorry, no Python 3 support. I'll happily accept patches.)  
  
@@ -73,6 +74,16 @@ No further plans currently
 
 Changes
 =======
+
+Version 0.1.5
+-------------
+
+2014-04-16
+- Cleanups, reformatted source (PEP-8).
+- More robust test suite.
+- Python 3 compatible syntax.
+- I switched the SSH implementation used by the examples back to paramiko.
+- No functional changes in package sPickle.
 
 Version 0.1.4
 -------------
