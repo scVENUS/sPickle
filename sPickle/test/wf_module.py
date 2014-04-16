@@ -18,7 +18,7 @@
 
 """A test module, that is marked as being part of a flow definition"""
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
 from . import wf_modul2
 

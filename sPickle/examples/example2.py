@@ -25,7 +25,7 @@ this computer, and unpickle the results.
 
 """
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 import sys
 import getpass
 import socket
@@ -92,11 +92,11 @@ def doit(connection):
 
     # Lets perform a few computations
     r = remote_function(22, 20)
-    print "Result: ", r
+    print("Result: ", r)
     r = remote_function("4", "1")
-    print "Result: ", r
+    print("Result: ", r)
     r = remote_function("42", None)
-    print "Result: ", r
+    print("Result: ", r)
 
 
 def main(argv):
@@ -110,8 +110,8 @@ def main(argv):
         username, host = host.split('@', 1)
     else:
         username = getpass.getuser()
-    print "Host is: %r  username is: %r" % (host, username)
-    print "Command line is: %r" % argv
+    print("Host is: %r  username is: %r" % (host, username))
+    print("Command line is: %r" % argv)
     password = None  # I'm using an ssh agent
 
     connection = rpyc_over_ssh.newRPyCConnectionOverSsh(argv, host, username, password)

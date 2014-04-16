@@ -16,7 +16,7 @@
 #  limitations under the License.
 #
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
 from unittest import TestCase, skipIf, skipUnless
 
@@ -519,7 +519,7 @@ class PicklingTest(TestCase):
             except Exception:
                 try:
                     l.append(pickle.STOP)
-                    pickletools.dis("".join(l), out=sys.stderr)
+                    pickletools.dis(b"".join(l), out=sys.stderr)
                 except:
                     traceback.print_exc(limit=1, file=sys.stderr)
             raise exinfo[0], exinfo[1], exinfo[2]
@@ -528,7 +528,7 @@ class PicklingTest(TestCase):
             dis = self.dis
         if dis:
             self.pickler.dis(p)
-            print "len(pickle): ", len(p)
+            print("len(pickle): ", len(p))
         return p
 
     # Test the object graph isomorphism for objects and their
@@ -1138,7 +1138,7 @@ class PicklingTest(TestCase):
 
     def testTypeTraceback(self):
         try:
-            1 / 0
+            1 // 0
         except Exception:
             orig = type(sys.exc_info()[2])
             sys.exc_clear()
@@ -1155,7 +1155,7 @@ class PicklingTest(TestCase):
     @skipIf(isStackless, "stackless can pickle frames")
     def testTraceback_NoStackless(self):
         try:
-            1 / 0
+            1 // 0
         except Exception:
             orig = sys.exc_info()[2]
             sys.exc_clear()
@@ -1201,7 +1201,7 @@ class PicklingTest(TestCase):
 
         def create_tb():
             try:
-                1 / 0
+                1 // 0
             except Exception:
                 tb_list.append(sys.exc_info()[2])
                 sys.exc_clear()
@@ -1577,7 +1577,7 @@ class PicklingTest(TestCase):
         self.assertEqual(obj.getvalue(), orig.getvalue())
         self.assertEqual(obj.tell(), orig.tell())
 
-        orig.write("0123456789")
+        orig.write(b"0123456789")
 
         p = self.dumpWithPreobjects(None, orig)
         obj = self.pickler.loads(p)[-1]
@@ -1604,7 +1604,7 @@ class PicklingTest(TestCase):
         self.assertRaises(ValueError, obj.getvalue)
 
     def testCStringIoInput(self):
-        orig = cStringIO.StringIO("")
+        orig = cStringIO.StringIO(b"")
 
         p = self.dumpWithPreobjects(None, orig)
         obj = self.pickler.loads(p)[-1]
@@ -1613,7 +1613,7 @@ class PicklingTest(TestCase):
         self.assertEqual(obj.getvalue(), orig.getvalue())
         self.assertEqual(obj.tell(), orig.tell())
 
-        orig = cStringIO.StringIO("0123456789")
+        orig = cStringIO.StringIO(b"0123456789")
 
         p = self.dumpWithPreobjects(None, orig)
         obj = self.pickler.loads(p)[-1]
@@ -2026,7 +2026,7 @@ class FailSaveTest(TestCase):
         p = pickletools.optimize(p)
         if dis:
             _sPickle.SPickleTools.dis(p)
-            print "len(pickle): ", len(p)
+            print("len(pickle): ", len(p))
         return pickle.loads(p)
 
     def testPickleable(self):
@@ -2121,7 +2121,7 @@ NT = collections.namedtuple("NT", "a")
 class PythonBugsTest(TestCase):
     def testNamedTupleIssue18015(self):
         # test Python 2.7.5 bug http://bugs.python.org/issue18015
-        pickle273 = '\x80\x02c%s\nNT\nK\x01\x85\x81ccollections\nOrderedDict\n]](U\x01aK\x01ea\x85Rb.' % (__name__,)
+        pickle273 = b'\x80\x02c%s\nNT\nK\x01\x85\x81ccollections\nOrderedDict\n]](U\x01aK\x01ea\x85Rb.' % (__name__,)
         try:
             nt = pickle.loads(pickle273)
         except AttributeError:

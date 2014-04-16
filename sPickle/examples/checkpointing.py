@@ -24,9 +24,9 @@ and `resumeCheckpoint`, that can be used to checkpoint
 and resume a (single threaded) python program.
 """
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
+
 import sys
-import types
 import sPickle
 import stackless
 
@@ -125,16 +125,16 @@ if __name__ == "__main__":
     if args.demo:
         def sample(checkpointSupport):
             internalState = 1
-            print "Internal state is ", internalState
+            print("Internal state is ", internalState)
             while internalState < 3:
                 flag, result = checkpointSupport.forkAndCheckpoint()
                 if flag:
-                    print "Created checkpoint"
+                    print("Created checkpoint")
                     return result
-                print "Resuming ..."
+                print("Resuming ...")
                 internalState += 1
-                print "Internal state is ", internalState
-            print "Done"
+                print("Internal state is ", internalState)
+            print("Done")
             return 0
 
         # the directory sPickle/examples is not in sys.path, therefore

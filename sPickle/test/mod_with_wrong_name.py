@@ -12,6 +12,6 @@
 #  science+computing ag
 #
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 NAME = __name__
 __name__ = "modified name"  # @ReservedAssignment

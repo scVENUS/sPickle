@@ -22,7 +22,7 @@ This example demonstrate how to checkpoint and restart
 a program.
 """
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 import sys
 import os.path
 import time
@@ -35,13 +35,13 @@ LOGGER = logging.getLogger(__name__)
 
 
 def long_running_function_with_checkpointing(checkpointSupport, *args, **keywords):
-    print "At program start"
-    print "  arguments: ", args
-    print "  keywords: ", keywords
+    print("At program start")
+    print("  arguments: ", args)
+    print("  keywords: ", keywords)
 
-    print "Computing ...",
+    print("Computing ...", end='')
     for i in xrange(1000):
-        print " ", i,
+        print(" ", i, end='')
         time.sleep(0.5)
         sys.stdout.flush()
 
@@ -56,16 +56,16 @@ def long_running_function_with_checkpointing(checkpointSupport, *args, **keyword
         else:
             # after restart
             newArgs, newKeywords = result
-            print "Restarted program resumes execution"
-            print "  original arguments: ", args
-            print "  original keywords: ", keywords
-            print "  new arguments: ", newArgs
-            print "  new keywords: ", newKeywords
-            print "  current i", i
+            print("Restarted program resumes execution")
+            print("  original arguments: ", args)
+            print("  original keywords: ", keywords)
+            print("  new arguments: ", newArgs)
+            print("  new keywords: ", newKeywords)
+            print("  current i", i)
 
-            print "Computing ...",
-    print ""
-    print "Done."
+            print("Computing ...", end='')
+    print("")
+    print("Done.")
 
     return 0  # posix exit code
 
@@ -97,7 +97,7 @@ def main(argv):
         return checkpointing.resumeCheckpoint(open(checkpointFile, "rb").read(), *argv)
 
     else:
-        print >> sys.stderr, 'Usage: %s: [ "start" | "resume" ] ...' % (os.path.basename(__file__),)
+        print('Usage: %s: [ "start" | "resume" ] ...' % (os.path.basename(__file__),), file=sys.stderr)
         return 1
 
 if __name__ == '__main__':

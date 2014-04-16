@@ -24,7 +24,8 @@ Unfortunately this code is not completely documented. See the
 documentation of paramiko and RPyC for details.
 """
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
+
 import sys
 import os.path
 import threading
@@ -167,9 +168,9 @@ def argv2command(argv):
             if c in SPECIAL1:
                 encoded.append('\\')
             encoded.append(c)
-        encoded = "".join(encoded)
+        encoded = b"".join(encoded)
         v.append(encoded)
-    command = " ".join(v)
+    command = b" ".join(v)
     return command
 
 
@@ -179,8 +180,8 @@ def _hello_world(argv):
     if not argv:
         argv = START_RPYC_CLASSIC_SERVER_ARGV
 
-    print "Host is: %r" % host
-    print "Command line is: %r" % argv
+    print("Host is: %r" % host)
+    print("Command line is: %r" % argv)
 
     username = getpass.getuser()
     password = None  # I'm using a ssh agent
@@ -190,7 +191,7 @@ def _hello_world(argv):
         root = connection.root         # get the remote root object
         rsys = root.getmodule("sys")   # get the remote sys module
         rsys.stdout = sys.stdout       # redirect the remote stdout to our stdout
-        connection.execute("print 'Hallo, World!'")  # print on the remote side
+        connection.execute(b"from __future__ import print_function; print('Hallo, World!')")  # print on the remote side
     finally:
         connection.close()
 

@@ -16,7 +16,7 @@
 #  limitations under the License.
 #
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
 import pickle
 import cPickle
@@ -470,7 +470,7 @@ class Pickler(pickle.Pickler):
             self.write(pickle.STOP)
         finally:
             if not self.__fileIsList:
-                self.__write("".join(self.writeList))
+                self.__write(b"".join(self.writeList))
 
     def do_checkpoint(self, obj, method, *args, **kw):
         """Checkpoint for dictionary backtracking"""
@@ -587,15 +587,15 @@ class Pickler(pickle.Pickler):
         if obj is CELL_TYPE:
             return self.save_reduce(type, (NONE_CELL,), obj=obj)
         if obj is weakref.ReferenceType:
-            self.write(pickle.GLOBAL + 'weakref\nReferenceType\n')
+            self.write(pickle.GLOBAL + b'weakref\nReferenceType\n')
             self.memoize(obj)
             return
         if obj is weakref.ProxyType:
-            self.write(pickle.GLOBAL + 'weakref\nProxyType\n')
+            self.write(pickle.GLOBAL + b'weakref\nProxyType\n')
             self.memoize(obj)
             return
         if obj is weakref.CallableProxyType:
-            self.write(pickle.GLOBAL + 'weakref\nCallableProxyType\n')
+            self.write(pickle.GLOBAL + b'weakref\nCallableProxyType\n')
             self.memoize(obj)
             return
 
@@ -732,7 +732,7 @@ class Pickler(pickle.Pickler):
 
     def save_dict(self, obj):
         if obj is sys.modules:
-            self.write(pickle.GLOBAL + 'sys' + '\n' + 'modules' + '\n')
+            self.write(pickle.GLOBAL + b'sys' + b'\n' + b'modules' + b'\n')
             self.memoize(obj)
             return
         self.do_checkpoint(obj, self._save_dict_impl)
@@ -826,7 +826,7 @@ class Pickler(pickle.Pickler):
                 if code <= 0xff:
                     write(pickle.EXT1 + chr(code))
                 elif code <= 0xffff:
-                    write("%c%c%c" % (pickle.EXT2, code & 0xff, code >> 8))
+                    write(b"%c%c%c" % (pickle.EXT2, code & 0xff, code >> 8))
                 else:
                     write(pickle.EXT4 + pack("<i", code))
                 return
@@ -844,7 +844,7 @@ class Pickler(pickle.Pickler):
 
         mangledModule = self.mangleModuleName(module, mod)
         if isinstance(mangledModule, str):
-            write(pickle.GLOBAL + mangledModule + '\n' + name + '\n')
+            write(pickle.GLOBAL + mangledModule + b'\n' + name + b'\n')
             self.memoize(obj)
         else:
             # The module name is computed at unpickling time.
@@ -1248,7 +1248,7 @@ class Pickler(pickle.Pickler):
             if isinstance(pickledModuleName, str):
                 # import __dict__ from the module. It is always present, because obj is a module
                 # mod = sys.modules[pickledModuleName]
-                self.write(pickle.GLOBAL + pickledModuleName + '\n__dict__\n')
+                self.write(pickle.GLOBAL + pickledModuleName + b'\n__dict__\n')
             else:
                 # dynamic import version of the following code
                 # __import__(pickledModuleName)
@@ -1360,7 +1360,7 @@ class Pickler(pickle.Pickler):
             sysname = "__stdin__"
         if sysname:
             LOGGER().info("Pickling a reference to sys.%s", sysname)
-            self.write(pickle.GLOBAL + "sys" + '\n' + sysname + '\n')
+            self.write(pickle.GLOBAL + b"sys" + b'\n' + sysname + b'\n')
             self.memoize(obj)
             return
         LOGGER().warn("Pickling file %r as null-file", obj)
@@ -1475,7 +1475,7 @@ class Pickler(pickle.Pickler):
         except ValueError:
             # closed file
             pos = None
-            value = ''
+            value = b''
         else:
             value = obj.getvalue()
 
@@ -1865,7 +1865,7 @@ class SPickleTools(object):
         if persistent_id_method is not None:
             pickler.persistent_id = types.MethodType(persistent_id_method, pickler, type(pickler))
         pickler.dump(obj)
-        p = pickletools.optimize("".join(l))
+        p = pickletools.optimize(b"".join(l))
         if doCompress:
             if callable(doCompress):
                 c = doCompress(p)
