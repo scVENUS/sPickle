@@ -38,27 +38,8 @@ class _CheckpointSupport(object):
     def __init__(self):
         self._restoreTraceFunc = None
 
-    def _switchTraceFunc(self, trace):
-        oldTraceFunc = sys.gettrace()
-        func = sys.settrace
-        # in case of the PyDev debugger, we have to mangle the function a little bit.
-        # This is kind of black magic, but unfortunately, I don't know any better way
-        # to do it
-        if isinstance(func, types.MethodType):
-            func = getattr(sys.settrace, "__func__")
-        func = getattr(func, "func_globals", {}).get("SetTrace", func)
-        self._restoreTraceFunc = lambda: func(oldTraceFunc)
-        if trace:
-            func(trace)
-            trace = None
-
-    def _taskletRun(self, trace, callable_, args, keywords):
-        self._switchTraceFunc(trace)
-        try:
-            raise sPickle.StacklessTaskletReturnValueException(callable_(self, *args, **keywords))
-        finally:
-            self._restoreTraceFunc()
-            self._restoreTraceFunc = None
+    def _taskletRun(self, callable_, args, keywords):
+        raise sPickle.StacklessTaskletReturnValueException(callable_(self, *args, **keywords))
 
     def _loop(self, tasklet, pickler):
         try:
@@ -72,7 +53,7 @@ class _CheckpointSupport(object):
                 #     result = ...
                 else:
                     raise ValueError("Unknown command %r" % (cmd,))
-                tasklet.tempval = (True, sys.gettrace(), result)
+                tasklet.tempval = (True, result)
         except sPickle.StacklessTaskletReturnValueException, e:
             return e.value
 
@@ -90,12 +71,9 @@ class _CheckpointSupport(object):
         `False`, `args_keywords`. args_keywords is a tuple containing the
         *args and **keywords parameters given to the resumeCheckpoint function.
         """
-        self._restoreTraceFunc()
-        self._restoreTraceFunc = None
         sys.exc_clear()
 
-        isCmdResult, trace, result = stackless.schedule(cmd)
-        self._switchTraceFunc(trace)
+        isCmdResult, result = stackless.schedule(cmd)
 
         return (isCmdResult, result)
 
@@ -112,7 +90,7 @@ def runCheckpointable(pickler, callable_, *args, **keywords):
     """
     checkpointSupport = _CheckpointSupport()
     tasklet = stackless.tasklet(checkpointSupport._taskletRun)
-    tasklet.setup(sys.gettrace(), callable_, args, keywords)
+    tasklet.setup(callable_, args, keywords)
     tasklet.tempval = None
     return checkpointSupport._loop(tasklet, pickler)
 
@@ -127,7 +105,7 @@ def resumeCheckpoint(checkpoint, *args, **keywords):
     # pt.dis(checkpoint, sys.stdout)
     restored = pt.loads(checkpoint, useCPickle=False)
     checkpointSupport, tasklet = restored
-    tasklet.tempval = (False, sys.gettrace(), (args, keywords))
+    tasklet.tempval = (False, (args, keywords))
     return checkpointSupport._loop(tasklet, pt.dumps)
 
 if __name__ == "__main__":
