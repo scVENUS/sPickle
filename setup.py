@@ -16,11 +16,12 @@
 #  limitations under the License.
 #
 
+from __future__ import absolute_import, division, print_function
 
 from setuptools import setup
 import sys
 if sys.version_info < (2, 7):
-    print 'ERROR: sPickle requires at least Python 2.7 to run.'
+    print('ERROR: sPickle requires at least Python 2.7 to run.')
     sys.exit(1)
 
 for line in open('conf.py'):

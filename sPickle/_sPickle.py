@@ -18,26 +18,66 @@
 
 from __future__ import absolute_import, division, print_function
 
-import pickle
-import cPickle
-import pickletools
-import thread
+
+# Useful for very coarse version differentiation.
+import sys
 import os.path
+import socket
+
+PY2 = sys.version_info[0] == 2
+PY3 = sys.version_info[0] == 3
+if PY2:
+    range = xrange
+    FILE_TYPES = (file,)
+    CLOSED_SOCKET_TYPES = (socket._closedsocket,)
+else:
+    _f0 = open(os.devnull, "rb", buffering=0)
+    _f1 = open(os.devnull, "rb")
+    _f2 = open(os.devnull, "wb")
+    _f3 = open(os.devnull, "r+b")
+    _f4 = open(os.devnull, "r")
+    FILE_TYPES = (type(_f0), type(_f1), type(_f2), type(_f3), type(_f4))
+    _f0.close()
+    _f1.close()
+    _f2.close()
+    _f3.close()
+    _f4.close()
+    del _f0
+    del _f1
+    del _f2
+    del _f3
+    del _f4
+    CLOSED_SOCKET_TYPES = ()
+
+import pickle
+if PY2:
+    import cPickle
+else:
+    cPickle = pickle
+import pickletools
+if PY2:
+    import thread as _thread
+else:
+    import _thread
 import collections
 import operator
 import functools
 import inspect
-import copy_reg
+if PY2:
+    import copy_reg as copyreg
+else:
+    import copyreg
 import types
 from pickle import PickleError, PicklingError  # @UnusedImport
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
+if PY2:
+    try:
+        from cStringIO import StringIO as BytesIO
+    except ImportError:
+        from StringIO import StringIO as BytesIO
+else:
+    from io import BytesIO
 from bz2 import compress, decompress
-import sys
 import struct
-import socket
 import tempfile
 import codecs
 import weakref
@@ -56,18 +96,20 @@ except Exception:
     _trace_memo_entries = None
 
 SOCKET_PAIR_TYPE = None
-if hasattr(socket, "socketpair"):
-    _sp = socket.socketpair()
-    SOCKET_PAIR_TYPE = type(_sp[0])
-    _sp[0].close()
-    _sp[1].close()
-    del _sp
+if PY2:
+    if hasattr(socket, "socketpair"):
+        _sp = socket.socketpair()
+        SOCKET_PAIR_TYPE = type(_sp[0])
+        _sp[0].close()
+        _sp[1].close()
+        del _sp
+    else:
+        _s = socket.socket()
+        SOCKET_PAIR_TYPE = type(_s._sock)
+        _s.close()
+        del _s
 else:
-    _s = socket.socket()
-    SOCKET_PAIR_TYPE = type(_s._sock)
-    _s.close()
-    del _s
-
+    SOCKET_PAIR_TYPE = socket.SocketType
 MODULE_TO_BE_PICKLED_FLAG_NAME = "__module_must_be_pickled__"
 
 
@@ -81,7 +123,7 @@ LISTITERATOR_TYPE = type(EMPTY_LIST_ITERATOR)
 EMPTY_TUPLE_ITERATOR = iter(())
 TUPLEITERATOR_TYPE = type(EMPTY_TUPLE_ITERATOR)
 
-EMPTY_RANGE_ITERATOR = iter(xrange(0))
+EMPTY_RANGE_ITERATOR = iter(range(0))
 RANGEITERATOR_TYPE = type(EMPTY_RANGE_ITERATOR)
 
 EMPTY_SET_ITERATOR = iter(set())
@@ -109,9 +151,9 @@ def LOGGER():
 
 
 # types to be replaced by proxies, if possible  ,
-RESOURCE_TYPES = (file, socket.SocketType, SOCKET_PAIR_TYPE, socket._closedsocket,
+RESOURCE_TYPES = FILE_TYPES + (socket.SocketType, SOCKET_PAIR_TYPE,
                   tempfile._TemporaryFileWrapper, tempfile.SpooledTemporaryFile,
-                  codecs.StreamReader, codecs.StreamWriter)
+                  codecs.StreamReader, codecs.StreamWriter) + CLOSED_SOCKET_TYPES
 
 try:
     from rpyc.core.netref import BaseNetref as _BaseNetref
@@ -182,7 +224,7 @@ def restore_modules_entry(doDel, old, new, preserveReferenceToNew=True):
 
 def create_thread_lock(locked):
     """recreate a lock object"""
-    l = thread.allocate_lock()
+    l = _thread.allocate_lock()
     if locked:
         if not l.acquire(0):
             raise pickle.UnpicklingError("Failed to acquire a newly created lock")
@@ -217,7 +259,7 @@ def create_closed_socketpair_socket():
 
 
 def create_cell(obj):
-    return (lambda: obj).func_closure[0]
+    return (lambda: obj).__closure__[0]
 
 if True:
     #
@@ -227,26 +269,26 @@ if True:
     # to this module
     #
     __GLOBALS_DICT = {'sys': sys,
-                      'thread': thread,
+                      '_thread': _thread,
                       'pickle': pickle,
                       'os': os,
                       'socket': socket,
                       '__builtins__': __builtins__}
     __func = type(create_module)
-#    import_module=__func(import_module.func_code, {'sys': None, '__import__': __import__}, 'import_module_')
-    create_module = __func(create_module.func_code, __GLOBALS_DICT, 'create_module_')
-    save_modules_entry = __func(save_modules_entry.func_code, __GLOBALS_DICT, 'save_modules_entry_')
-    restore_modules_entry = __func(restore_modules_entry.func_code,
+#    import_module=__func(import_module.__code__, {'sys': None, '__import__': __import__}, 'import_module_')
+    create_module = __func(create_module.__code__, __GLOBALS_DICT, 'create_module_')
+    save_modules_entry = __func(save_modules_entry.__code__, __GLOBALS_DICT, 'save_modules_entry_')
+    restore_modules_entry = __func(restore_modules_entry.__code__,
                                  __GLOBALS_DICT,
                                  'restore_modules_entry_',
-                                 restore_modules_entry.func_defaults)
-    create_thread_lock = __func(create_thread_lock.func_code, __GLOBALS_DICT, 'create_thread_lock_')
-    create_null_file = __func(create_null_file.func_code, __GLOBALS_DICT, 'create_null_file_')
-    create_closed_socket = __func(create_closed_socket.func_code, __GLOBALS_DICT, 'create_closed_socket_')
-    create_closed_socketpair_socket = __func(create_closed_socketpair_socket.func_code,
+                                 restore_modules_entry.__defaults__)
+    create_thread_lock = __func(create_thread_lock.__code__, __GLOBALS_DICT, 'create_thread_lock_')
+    create_null_file = __func(create_null_file.__code__, __GLOBALS_DICT, 'create_null_file_')
+    create_closed_socket = __func(create_closed_socket.__code__, __GLOBALS_DICT, 'create_closed_socket_')
+    create_closed_socketpair_socket = __func(create_closed_socketpair_socket.__code__,
                                              __GLOBALS_DICT,
                                             'create_closed_socketpair_socket_')
-    create_cell = __func(create_cell.func_code, __GLOBALS_DICT, 'create_cell_')
+    create_cell = __func(create_cell.__code__, __GLOBALS_DICT, 'create_cell_')
     del __func
     del __GLOBALS_DICT
 
@@ -302,7 +344,7 @@ class Pickler(pickle.Pickler):
         """
         The file argument must be either an instance of :class:`collections.MutableSequence`
         or have a `write(str)` - method that accepts a single
-        string argument.  It can thus be an open file object, a StringIO
+        string argument.  It can thus be an open file object, a BytesIO
         object, or any other custom object that meets this interface.
         As an alternative you can use a list or any other instance of
         collections.MutableSequence.
@@ -380,7 +422,7 @@ class Pickler(pickle.Pickler):
         self.dispatch[types.FunctionType] = self.save_function.__func__
         self.dispatch[types.CodeType] = self.saveCode.__func__
         self.dispatch[CELL_TYPE] = self.saveCell.__func__
-        self.dispatch[thread.LockType] = self.saveLock.__func__
+        self.dispatch[_thread.LockType] = self.saveLock.__func__
         self.dispatch[types.FileType] = self.saveFile.__func__
         self.dispatch[socket.SocketType] = self.saveSocket.__func__
         self.dispatch[SOCKET_PAIR_TYPE] = self.saveSocketPairSocket.__func__
@@ -494,7 +536,7 @@ class Pickler(pickle.Pickler):
                     return
                 method(obj, *args, **kw)
                 done = True
-            except ObjectAlreadyPickledError, e:
+            except ObjectAlreadyPickledError as e:
                 # the object, that must be pickled now. In case of a module
                 # it holds a reference to its dictionary. Therefore the name "holder"
                 holder = e.holder
@@ -577,7 +619,7 @@ class Pickler(pickle.Pickler):
         if obj is EMPTY_TUPLE_ITERATOR:
             return self.save_reduce(iter, ((),), obj=obj)
         if obj is EMPTY_RANGE_ITERATOR:
-            return self.save_reduce(iter, (xrange(0),), obj=obj)
+            return self.save_reduce(iter, (range(0),), obj=obj)
         if obj is EMPTY_SET_ITERATOR:
             return self.save_reduce(iter, (set(),), obj=obj)
         if obj is CSTRINGIO_INPUT_TYPE:
@@ -614,7 +656,7 @@ class Pickler(pickle.Pickler):
         # that getattr(obj, "__setstate__", None) raises an exception.
         try:
             getattr(obj, "__setstate__", None)
-        except Exception, e:
+        except Exception as e:
             raise UnpicklingWillFailError("Object %r has hostile attribute access: %r" % (obj, e))
 
         return super_save(self, obj)
@@ -873,10 +915,10 @@ class Pickler(pickle.Pickler):
         try:
             with self.rollback_on_exception():
                 return self.save_global(obj)
-        except pickle.PicklingError, e:
+        except pickle.PicklingError as e:
             LOGGER().debug("Going to pickle function %r by value, because it can't be pickled as global: %s", obj, str(e))
 
-        # Check copy_reg.dispatch_table
+        # Check copyreg.dispatch_table
         reduce_ = pickle.dispatch_table.get(type(obj))
         if reduce_:
             rv = reduce_(obj)
@@ -901,7 +943,7 @@ class Pickler(pickle.Pickler):
             try:
                 # test for the default result. If the function has a correct __reduce__ method,
                 # it will probably return something different
-                rvIsBroken = rv[0] is copy_reg.__newobj__ and 1 == len(rv[1]) and rv[1][0] is types.FunctionType
+                rvIsBroken = rv[0] is copyreg.__newobj__ and 1 == len(rv[1]) and rv[1][0] is types.FunctionType
             except Exception:
                 rvIsBroken = False
             if rvIsBroken:
@@ -1084,9 +1126,9 @@ class Pickler(pickle.Pickler):
         pickledModule = self._saveMangledModuleName(obj.__module__)
 
         # in order to avoid a possible recursion, save the globals, defaults and closure first
-        func_globals = obj.func_globals
+        func_globals = obj.__globals__
         if id(func_globals) not in memo:
-            self.save(obj.func_globals)
+            self.save(obj.__globals__)
             self.write(pickle.POP)
 
         # In case the globals dict refers to obj
@@ -1095,7 +1137,7 @@ class Pickler(pickle.Pickler):
             self.write(self.get(x[0]))
             return
 
-        func_closure = obj.func_closure
+        func_closure = obj.__closure__
         if func_closure and id(func_closure) not in memo:
             self.save(func_closure)
             self.write(pickle.POP)
@@ -1105,7 +1147,7 @@ class Pickler(pickle.Pickler):
                 self.write(self.get(x[0]))
                 return
 
-        func_defaults = obj.func_defaults
+        func_defaults = obj.__defaults__
         if func_defaults and id(func_defaults) not in memo:
             self.save(func_defaults)
             self.write(pickle.POP)
@@ -1115,9 +1157,9 @@ class Pickler(pickle.Pickler):
                 self.write(self.get(x[0]))
                 return
 
-        self.save_reduce(types.FunctionType, (obj.func_code,
-                                              obj.func_globals,
-                                              obj.func_name,
+        self.save_reduce(types.FunctionType, (obj.__code__,
+                                              obj.__globals__,
+                                              obj.__name__,
                                               func_defaults,
                                               func_closure),
                          obj=obj)
@@ -1125,7 +1167,7 @@ class Pickler(pickle.Pickler):
         self.write(pickle.POP)
         self.save_reduce(setattr, (obj, "__doc__", obj.__doc__))
         self.write(pickle.POP)
-        self.save_reduce(setattr, (obj, "func_dict", obj.func_dict))
+        self.save_reduce(setattr, (obj, "__dict__", obj.__dict__))
         self.write(pickle.POP)
 
     def saveCode(self, obj):
@@ -1584,8 +1626,8 @@ class Pickler(pickle.Pickler):
             # 2. locate the pickler object
             pickler = None
             fr = fr1
-            savecode = Pickler.save.im_func.func_code
-            dumpcode = cls.dump.im_func.func_code
+            savecode = Pickler.save.im_func.__code__
+            dumpcode = cls.dump.im_func.__code__
 
             # A note about stack analysis: it is important not to access
             # frame.f_locals unless absolutely necessary. Accessing f_locals creates a
@@ -1711,7 +1753,7 @@ class FailSavePickler(Pickler):
             try:
                 with self.rollback_on_exception():
                     return super_save(self, obj)
-            except Exception, e:
+            except Exception as e:
                 if (isinstance(e, pickle.PickleError) and not
                     isinstance(e, (pickle.PicklingError, pickle.UnpicklingError))):
                     # internal problems of the pickler and backtracking exceptions
@@ -1971,7 +2013,7 @@ class SPickleTools(object):
         """
         if str_.startswith("BZh9"):
             str_ = decompress(str_)
-        file_ = StringIO(str_)
+        file_ = BytesIO(str_)
         if unpickler_class is None:
             p = cPickle if useCPickle else pickle
             unpickler_class = p.Unpickler
@@ -2160,7 +2202,7 @@ class SPickleTools(object):
                     except Exception:
                         pass
             if inspect.isfunction(func):
-                g = func.func_globals
+                g = func.__globals__
         for v in modules:
             if v:
                 m = sys.modules.get(v)

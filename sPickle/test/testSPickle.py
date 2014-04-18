@@ -18,17 +18,45 @@
 
 from __future__ import absolute_import, division, print_function
 
+import sys
+PY2 = sys.version_info[0] == 2
+PY3 = sys.version_info[0] == 3
+
+if PY2:
+    exec("""def reraise(tp, value, tb=None):
+    raise tp, value, tb
+""")
+else:
+    def reraise(tp, value, tb=None):
+        if value.__traceback__ is not tb:
+            raise value.with_traceback(tb)
+        raise value
+
 from unittest import TestCase, skipIf, skipUnless
 
 import pickletools
-from StringIO import StringIO
-import cStringIO
+
+if PY2:
+    try:
+        from cStringIO import StringIO as BytesIO
+    except ImportError:
+        from StringIO import StringIO as BytesIO
+else:
+    from io import BytesIO
+
+if PY2:
+    import cStringIO
+else:
+    from io import StringIO as cStringIO
+
 import pickle
 import types
-import sys
 import imp
 import traceback
-import thread
+if PY2:
+    import thread as _thread
+else:
+    import _thread
 import functools
 # a pure python module used for testing
 import tabnanny
@@ -62,8 +90,8 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO)
 
-from .. import _sPickle
-from . import wf_module
+from sPickle import _sPickle
+from sPickle.test import wf_module
 
 
 class PEP302ImportDetector(object):
@@ -136,11 +164,11 @@ class ModuleWithOrderedDict(types.ModuleType):
 modForPartiallyUnpickleable = ModuleWithOrderedDict("modForPartiallyUnpickleable")
 sys.modules["modForPartiallyUnpickleable"] = modForPartiallyUnpickleable
 setattr(modForPartiallyUnpickleable, _sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME, True)
-modForPartiallyUnpickleable.True = True
+setattr(modForPartiallyUnpickleable, "True", True)
 
 # A function, within modForPartiallyUnpickleable
 # This triggers a problem in pickle.Pickler.save_function
-partiallyUnpickleableFunction = types.FunctionType(aFunction.func_code,
+partiallyUnpickleableFunction = types.FunctionType(aFunction.__code__,
                                                    modForPartiallyUnpickleable.__dict__)
 modForPartiallyUnpickleable.aFunction = partiallyUnpickleableFunction
 
@@ -255,10 +283,10 @@ def buildModule(name):
     # function from another module
     m.foreignFunction = aFunction
     # function of the anonymous module
-    exec """
+    exec ("""
 def isOk():
     return foreignFunction()
-""" in m.__dict__
+""", m.__dict__)
     return m
 
 anonymousModule = buildModule("anonymousModule")
@@ -282,7 +310,7 @@ class StrangeModuleType(types.ModuleType):
                 # modules namespace. Just copy the __module__ attribute,
                 # to make the synthetic function part of self
                 f = eval("lambda : True", {'__name__': self.__module__})
-                f.func_name = name
+                f.__name__ = name
                 self.syntheticFunctions[id(self)] = f
             return f
         raise AttributeError(name)
@@ -303,9 +331,12 @@ class TestImportFunctor(object):
         return self.saved_import(name, *args, **kw)
 
     def __enter__(self):
-        import __builtin__
-        self.saved_import = __builtin__.__import__
-        __builtin__.__import__ = self
+        if PY2:
+            import __builtin__ as builtins
+        else:
+            import builtins
+        self.saved_import = builtins.__import__
+        builtins.__import__ = self
         self.saved_modules = sys.modules.copy()
         assert self.saved_modules == sys.modules
 
@@ -326,8 +357,11 @@ class TestImportFunctor(object):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        import __builtin__
-        __builtin__.__import__ = self.saved_import
+        if PY2:
+            import __builtin__ as builtins
+        else:
+            import builtins
+        builtins.__import__ = self.saved_import
         self.post_modules = sys.modules.copy()
         assert self.post_modules == sys.modules
         sys.modules.clear()
@@ -510,7 +544,7 @@ class PicklingTest(TestCase):
             self.assertEqual(sys_modules, sys_modules2)
             self.assertEqual(imports, set())
 
-            self.pickler.dis(p, out=StringIO())
+            self.pickler.dis(p, out=BytesIO())
         except:
             exinfo = sys.exc_info()
             l = []
@@ -522,7 +556,7 @@ class PicklingTest(TestCase):
                     pickletools.dis(b"".join(l), out=sys.stderr)
                 except:
                     traceback.print_exc(limit=1, file=sys.stderr)
-            raise exinfo[0], exinfo[1], exinfo[2]
+            reraise(exinfo[0], exinfo[1], exinfo[2])
 
         if dis is None:
             dis = self.dis
@@ -584,7 +618,7 @@ class PicklingTest(TestCase):
 #        p = self.dumpWithPreobjects(None, orig, dis=False)
 #        obj = self.pickler.loads(p)[-1]
 #        self.assertIsNot(obj, orig)
-#        self.assertDictEqual(orig.func_globals, obj.func_globals)
+#        self.assertDictEqual(orig.__globals__, obj.__globals__)
 #
     def testModule(self):
         orig = tabnanny
@@ -1004,10 +1038,10 @@ class PicklingTest(TestCase):
         self.assertEqual(obj.__name__, orig.__name__)
         self.assertEqual(obj.__doc__, orig.__doc__)
         if hasattr(orig, "func_globals"):
-            self.assertTrue(type(obj.func_globals) is type(orig.func_globals))
+            self.assertTrue(type(obj.__globals__) is type(orig.__globals__))
         if hasattr(orig, "func_code"):
-            self.assertFalse(obj.func_code is orig.func_code)
-            self.assertEquals(obj.func_code, orig.func_code)
+            self.assertFalse(obj.__code__ is orig.__code__)
+            self.assertEquals(obj.__code__, orig.__code__)
         # Todo: compare the other attributes of a function
         return obj
 
@@ -1095,14 +1129,14 @@ class PicklingTest(TestCase):
         self.assertTrue(obj is types.CodeType)
 
     def testTypeCell(self):
-        cellType = type((lambda: self).func_closure[0])
+        cellType = type((lambda: self).__closure__[0])
         p = self.pickler.dumps(cellType)
         obj = self.pickler.loads(p)
         self.assertTrue(obj is cellType)
 
     def testCodeObject(self):
         # a function code object
-        orig = self.testCodeObject.im_func.func_code
+        orig = self.testCodeObject.im_func.__code__
         self.codeObjectTest(orig, dis=False)
 
     def codeObjectTest(self, orig, dis=False):
@@ -1245,7 +1279,10 @@ class PicklingTest(TestCase):
         self.assertTrue(obj is sys.modules)
 
     def testDict__builtins__(self):
-        from __builtin__ import __dict__ as bid
+        if PY2:
+            from __builtin__ import __dict__ as bid
+        else:
+            from builtins import __dict__ as bid
         self.assertIs(bid, __builtins__)
         p = self.dumpWithPreobjects(None, __builtins__, dis=False)
         obj = self.pickler.loads(p)[1]
@@ -1262,34 +1299,34 @@ class PicklingTest(TestCase):
         self.assertTrue(obj is types.ClassType)
 
     def testThreadLock(self):
-        lock = thread.allocate_lock()
-        self.assertIsInstance(lock, thread.LockType)
+        lock = _thread.allocate_lock()
+        self.assertIsInstance(lock, _thread.LockType)
         p = self.pickler.dumps(lock)
         obj = self.pickler.loads(p)
-        self.assertIsInstance(obj, thread.LockType)
+        self.assertIsInstance(obj, _thread.LockType)
         self.assertIsNot(obj, lock)
         self.assertFalse(obj.locked())
 
         self.assertTrue(lock.acquire(0))
         p = self.pickler.dumps(lock)
         obj = self.pickler.loads(p)
-        self.assertIsInstance(obj, thread.LockType)
+        self.assertIsInstance(obj, _thread.LockType)
         self.assertTrue(obj.locked())
 
     def testThreadLockAcquire(self):
-        self.builtinMethodTest(thread.allocate_lock(), "acquire")
+        self.builtinMethodTest(_thread.allocate_lock(), "acquire")
 
     def testThreadLockRelease(self):
-        self.builtinMethodTest(thread.allocate_lock(), "release")
+        self.builtinMethodTest(_thread.allocate_lock(), "release")
 
     def testThreadLockLocked(self):
-        self.builtinMethodTest(thread.allocate_lock(), "locked")
+        self.builtinMethodTest(_thread.allocate_lock(), "locked")
 
     def builtinMethodTest(self, obj, methodName):
         method = getattr(obj, methodName)
         p = self.dumpWithPreobjects(method, obj, dis=False)
         restoredMethod, restoredObj = self.pickler.loads(p)
-        self.assertIsInstance(restoredObj, thread.LockType)
+        self.assertIsInstance(restoredObj, _thread.LockType)
         self.assertIsNot(restoredObj, obj)
         self.assertIs(restoredMethod.__self__, restoredObj)
         self.assertEqual(restoredMethod, getattr(restoredObj, methodName))
@@ -1997,7 +2034,7 @@ class PicklingTest(TestCase):
 class FailSaveTest(TestCase):
     def setUp(self):
         super(FailSaveTest, self).setUp()
-        self.file = StringIO()
+        self.file = BytesIO()
         self.pickler = _sPickle.FailSavePickler(self.file, -1)
         self.pickler.get_replacement = self.get_replacement
         self.unpickleable = UnpickleableClass()
