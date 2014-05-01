@@ -19,6 +19,8 @@
 from __future__ import absolute_import, division, print_function
 
 import sys
+import types
+
 PY2 = sys.version_info[0] == 2
 PY3 = sys.version_info[0] == 3
 
@@ -26,31 +28,26 @@ if PY2:
     exec("""def reraise(tp, value, tb=None):
     raise tp, value, tb
 """)
+    class_types = (type, types.ClassType)
+    mapping_proxy_type = types.DictProxyType
 else:
     def reraise(tp, value, tb=None):
         if value.__traceback__ is not tb:
             raise value.with_traceback(tb)
         raise value
 
+    class_types = (type,)
+    mapping_proxy_type = types.MappingProxyType
+
 from unittest import TestCase, skipIf, skipUnless
 
 import pickletools
-
-if PY2:
-    try:
-        from cStringIO import StringIO as BytesIO
-    except ImportError:
-        from StringIO import StringIO as BytesIO
-else:
-    from io import BytesIO
+import io
 
 if PY2:
     import cStringIO
-else:
-    from io import StringIO as cStringIO
 
 import pickle
-import types
 import imp
 import traceback
 if PY2:
@@ -251,7 +248,7 @@ class Q(object):
             self.count = self.count + 1
 
         def run(self, test):
-            test.assertIsInstance(self.refToGlobals, types.DictProxyType)
+            test.assertIsInstance(self.refToGlobals, mapping_proxy_type)
             test.assertEqual(self.refToGlobals, Q.__dict__)
             test.assertEqual(self.count, 1)
             return True
@@ -344,8 +341,8 @@ class TestImportFunctor(object):
             if isinstance(m, types.ModuleType):
                 name = m.__name__
                 if m is not sys.modules.get(name):
-                    for k, v in sys.modules.iteritems():
-                        if v is m:
+                    for k in sys.modules:
+                        if sys.modules[k] is m:
                             name = k
                 m = name
             if m in sys.modules:
@@ -514,7 +511,8 @@ class PicklingTest(TestCase):
     IMPORTS_TO_IGNORE = ('email.', 'uu', 'quopri', 'imghdr', 'sndhdr',
                          'encodings', 'urllib', 'calendar', 'datetime',
                          'nturl2path', 'ssl', 'base64', 'textwrap',
-                         'urlparse', 'locale', '_locale')
+                         'urlparse', 'locale', '_locale',
+                         'ctypes', 'ctypes.', '_ctypes')
 
     def dumpWithPreobjects(self, preObjects, *obj, **kw):
         """Dump one or more objects.
@@ -544,12 +542,12 @@ class PicklingTest(TestCase):
             self.assertEqual(sys_modules, sys_modules2)
             self.assertEqual(imports, set())
 
-            self.pickler.dis(p, out=BytesIO())
+            self.pickler.dis(p, out=io.BytesIO() if PY2 else io.StringIO())
         except:
             exinfo = sys.exc_info()
             l = []
             try:
-                _sPickle.Pickler(l, 2).dump(toBeDumped)
+                _sPickle.Pickler(l, -1).dump(toBeDumped)
             except Exception:
                 try:
                     l.append(pickle.STOP)
@@ -932,9 +930,9 @@ class PicklingTest(TestCase):
         if mangleModuleName:
             oname = mangleModuleName.getMangledName(oname)
         self.assertEquals(obj.__name__, oname)
-        obj_dict_keys = set(obj.__dict__.iterkeys())
+        obj_dict_keys = set(obj.__dict__.keys())
         obj_dict_keys.discard(_sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME)
-        orig_dict_keys = set(orig.__dict__.iterkeys())
+        orig_dict_keys = set(orig.__dict__.keys())
         orig_dict_keys.discard(_sPickle.MODULE_TO_BE_PICKLED_FLAG_NAME)
         self.assertEqual(obj_dict_keys, orig_dict_keys)
         if callable(getattr(orig, "isOk", None)):
@@ -1067,7 +1065,7 @@ class PicklingTest(TestCase):
     def boundInstancemethodTest(self, cls, function_by_value=False):
         orig = cls('OK').isOk
         self.assertIsInstance(orig, types.MethodType)
-        self.assertIsNotNone(orig.im_self)
+        self.assertIsNotNone(orig.__self__)
 
         p = self.dumpWithPreobjects(None, orig, dis=False)
 
@@ -1075,29 +1073,33 @@ class PicklingTest(TestCase):
         self.assertIsNot(obj, orig)
         self.assertIs(type(obj), type(orig))
         if function_by_value:
-            self.assertIsNot(obj.im_func, orig.im_func)
-            self.assertIs(type(obj.im_func), type(orig.im_func))
-            self.assertIsNot(obj.im_class, orig.im_class)
-            self.assertIs(type(obj.im_class), type(orig.im_class))
+            self.assertIsNot(obj.__func__, orig.__func__)
+            self.assertIs(type(obj.__func__), type(orig.__func__))
+            if PY2:
+                self.assertIsNot(obj.im_class, orig.im_class)
+                self.assertIs(type(obj.im_class), type(orig.im_class))
         else:
-            self.assertIs(obj.im_func, orig.im_func)
-            self.assertIs(obj.im_class, orig.im_class)
-            self.assertIs(type(obj.im_self), type(orig.im_self))
-        self.assertIsNot(obj.im_self, orig.im_self)
+            self.assertIs(obj.__func__, orig.__func__)
+            self.assertIs(obj.__func__, orig.__func__)
+            self.assertIs(type(obj.__self__), type(orig.__self__))
+        self.assertIsNot(obj.__self__, orig.__self__)
         self.assertIs(obj(), True)
 
+    @skipUnless(PY2, "Python 2 only")
     def testUnboundInstancemethod1(self):
         self.unboundInstancemethodTest(PlainClass)
 
     def testBoundInstancemethod1(self):
         self.boundInstancemethodTest(PlainClass)
 
+    @skipUnless(PY2, "Python 2 only")
     def testUnboundInstancemethod2(self):
         self.unboundInstancemethodTest(PlainSubClass)
 
     def testBoundInstancemethod2(self):
         self.boundInstancemethodTest(PlainSubClass)
 
+    @skipUnless(PY2, "Python 2 only")
     def testUnboundInstancemethod3(self):
         self.unboundInstancemethodTest(PlainClassicClass)
 
@@ -1136,7 +1138,7 @@ class PicklingTest(TestCase):
 
     def testCodeObject(self):
         # a function code object
-        orig = self.testCodeObject.im_func.__code__
+        orig = self.testCodeObject.__func__.__code__
         self.codeObjectTest(orig, dis=False)
 
     def codeObjectTest(self, orig, dis=False):
@@ -1146,20 +1148,23 @@ class PicklingTest(TestCase):
         obj = self.pickler.loads(p)[1]
         self.assertIsNot(obj, orig)
         self.assertIsInstance(obj, types.CodeType)
-        self.assertEqual(obj.co_name, orig.co_name)
         self.assertEqual(obj.co_argcount, orig.co_argcount)
-        self.assertEqual(obj.co_nlocals, orig.co_nlocals)
-        self.assertEqual(obj.co_varnames, orig.co_varnames)
         self.assertEqual(obj.co_cellvars, orig.co_cellvars)
-        self.assertEqual(obj.co_freevars, orig.co_freevars)
         self.assertEqual(obj.co_code, orig.co_code)
         self.assertEqual(obj.co_consts, orig.co_consts)
-        self.assertEqual(obj.co_names, orig.co_names)
         self.assertEqual(obj.co_filename, orig.co_filename)
         self.assertEqual(obj.co_firstlineno, orig.co_firstlineno)
-        self.assertEqual(obj.co_lnotab, orig.co_lnotab)
-        self.assertEqual(obj.co_stacksize, orig.co_stacksize)
         self.assertEqual(obj.co_flags, orig.co_flags)
+        self.assertEqual(obj.co_freevars, orig.co_freevars)
+        self.assertEqual(obj.co_lnotab, orig.co_lnotab)
+        self.assertEqual(obj.co_name, orig.co_name)
+        self.assertEqual(obj.co_names, orig.co_names)
+        self.assertEqual(obj.co_nlocals, orig.co_nlocals)
+        self.assertEqual(obj.co_stacksize, orig.co_stacksize)
+        self.assertEqual(obj.co_varnames, orig.co_varnames)
+        if PY2:
+            return
+        self.assertEqual(obj.co_kwonlyargcount, orig.co_kwonlyargcount)
 
     #
     # Tests for pickling trace back and frame objects
@@ -1175,7 +1180,6 @@ class PicklingTest(TestCase):
             1 // 0
         except Exception:
             orig = type(sys.exc_info()[2])
-            sys.exc_clear()
         p = self.dumpWithPreobjects(None, orig, dis=False)
         obj = self.pickler.loads(p)[-1]
         self.assertIs(obj, orig)
@@ -1224,7 +1228,8 @@ class PicklingTest(TestCase):
             # sometimes obj.f_locals is empty. I didn't investigate the cause yet,
             # but it is probably related to the (broken) pickling implementation of Stackless
             self.assertSetEqual(obj_f_locals_keys, orig_f_locals_keys)
-        self.assertEqual(obj.f_restricted, orig.f_restricted)
+        if PY2:
+            self.assertEqual(obj.f_restricted, orig.f_restricted)
 
     @skipUnless(isStackless, "stackless only")
     def testTraceback_Stackless(self):
@@ -1293,6 +1298,7 @@ class PicklingTest(TestCase):
         obj = self.pickler.loads(p)
         self.assertTrue(obj is type)
 
+    @skipUnless(PY2, "Python 2 only")
     def testTypeClass(self):
         p = self.pickler.dumps(types.ClassType)
         obj = self.pickler.loads(p)
@@ -1535,19 +1541,19 @@ class PicklingTest(TestCase):
         self.assertTupleEqual((1, 2, 3), obj(target))
 
     def testXrange(self):
-        orig = xrange(4, 10, 2)
+        orig = (xrange if PY2 else range)(4, 10, 2)
         p = self.dumpWithPreobjects(None, orig, dis=False)
         obj = self.pickler.loads(p)[-1]
-        self.assertIsInstance(obj, xrange)
+        self.assertIs(type(obj), type(orig))
         self.assertListEqual(list(obj), list(orig))
 
     @skipUnless(isStackless, "stackless only")
     def testRangeIterator(self):
-        x = xrange(2, 10, 2)
+        x = (xrange if PY2 else range)(2, 10, 2)
         orig = iter(x)
         lorig = []
-        lorig.append(orig.next())
-        lorig.append(orig.next())
+        lorig.append(next(orig))
+        lorig.append(next(orig))
         lobj = lorig[:]
         p = self.dumpWithPreobjects(None, orig, dis=False)
         lorig.extend(orig)
@@ -1559,17 +1565,17 @@ class PicklingTest(TestCase):
 
     def testDictProxy(self):
         dp = PlainClass.__dict__
-        self.assertIsInstance(dp, types.DictProxyType)
-        p = self.dumpWithPreobjects(None, dp)
+        self.assertIsInstance(dp, mapping_proxy_type)
+        p = self.dumpWithPreobjects(None, dp, dis=False)
         obj = self.pickler.loads(p)[-1]
-        self.assertIsInstance(obj, types.DictProxyType)
+        self.assertIsInstance(obj, mapping_proxy_type)
         self.assertEqual(dp, obj)
 
     def testDictProxyNotClassDict(self):
         class C(object):
             __slots__ = ()
         dp = C.__dict__
-        self.assertIsInstance(dp, types.DictProxyType)
+        self.assertIsInstance(dp, mapping_proxy_type)
         self.assertRaises(pickle.PicklingError, self.pickler.dumps, dp)
 
     def testMemberDescriptor(self):
@@ -1592,18 +1598,21 @@ class PicklingTest(TestCase):
         self.assertEqual(orig.__name__, obj.__name__)
         self.assertClassEquals(orig.__objclass__, obj.__objclass__)
 
+    @skipUnless(PY2, "Python 2 only")
     def testCStringIoInputType(self):
         orig = cStringIO.InputType
         p = self.dumpWithPreobjects(None, orig)
         obj = self.pickler.loads(p)[-1]
         self.assertIs(obj, orig)
 
+    @skipUnless(PY2, "Python 2 only")
     def testCStringIoOutputType(self):
         orig = cStringIO.OutputType
         p = self.dumpWithPreobjects(None, orig)
         obj = self.pickler.loads(p)[-1]
         self.assertIs(obj, orig)
 
+    @skipUnless(PY2, "Python 2 only")
     def testCStringIoOutput(self):
         orig = cStringIO.StringIO()
 
@@ -1640,6 +1649,7 @@ class PicklingTest(TestCase):
         self.assertIsInstance(obj, type(orig))
         self.assertRaises(ValueError, obj.getvalue)
 
+    @skipUnless(PY2, "Python 2 only")
     def testCStringIoInput(self):
         orig = cStringIO.StringIO(b"")
 
@@ -1850,29 +1860,58 @@ class PicklingTest(TestCase):
         cls = self.classCopyTest(orig, dis=False)
         self.assertIsInstance(cls.md, types.MemberDescriptorType)
 
+    def _getClassDict(self, cls):
+        c = {}
+        d = cls.__dict__
+        for k in d:
+            if k in ('__dict__', '__weakref__'):
+                continue
+            c[k] = d[k]
+        try:
+            c['__qualname__'] = cls.__qualname__
+        except AttributeError:
+            pass
+        return c
+
     def testClassWithMetaClass(self):
+        class Metaclass(type):
+            # the absolute minimal implementation
+            pass
+
         class C(object):
-            class __metaclass__(type):
-                # the absolute minimal implementation
-                pass
+            if PY2:
+                __metaclass__ = Metaclass
+        if PY3:
+            C = Metaclass("C", C.__bases__, self._getClassDict(C))
+
         orig = C
         cls = self.classCopyTest(orig, dis=False)
-        self.assertClassEquals(orig.__metaclass__, cls.__metaclass__)
+        if PY2:
+            self.assertClassEquals(orig.__metaclass__, cls.__metaclass__)
 
     def testClassWithMetaClass2(self):
+        class Metaclass(type):
+            # the absolute minimal implementation
+            pass
+
         class C(object):
-            class __metaclass__(type):
-                # the absolute minimal implementation
-                pass
+            if PY2:
+                __metaclass__ = Metaclass
+        if PY3:
+            C = Metaclass("C", C.__bases__, self._getClassDict(C))
 
         class orig(C):
             pass
         cls = self.classCopyTest(orig, dis=False)
-        self.assertClassEquals(orig.__metaclass__, cls.__metaclass__)
+        if PY2:
+            self.assertClassEquals(orig.__metaclass__, cls.__metaclass__)
 
     def testABCMeta(self):
-        class C(object):
-            __metaclass__ = abc.ABCMeta
+        if PY2:
+            class C(object):
+                __metaclass__ = abc.ABCMeta
+        else:
+            C = abc.ABCMeta("C", (object,), dict(module=__name__))
         C.register(PlainClass)
 
         self.assertIsInstance(C._abc_cache, weakref.WeakSet)
@@ -1888,7 +1927,11 @@ class PicklingTest(TestCase):
 
         p = self.dumpWithPreobjects(None, C, dis=False)
         cls = self.pickler.loads(p)[-1]
-        self.assertClassEquals(C.__metaclass__, cls.__metaclass__)
+        if PY2:
+            self.assertClassEquals(C.__metaclass__, cls.__metaclass__)
+        else:
+            self.assertIsNot(cls, C)
+            self.assertIs(type(cls), type(C))
 
         # Now make sure, the caches of the clone are empty. This
         # is necessary to avoid attempts to pickle potentially
@@ -1906,7 +1949,7 @@ class PicklingTest(TestCase):
         if origCls is cls:
             return
         self.assertLess(level, 10, "Possible recursion detected")
-        if type(origCls) in (type, types.ClassType):
+        if type(origCls) in class_types:
             # skip this assert for metaclasses
             self.assertIs(type(cls), type(origCls))
         else:
@@ -1961,7 +2004,8 @@ class PicklingTest(TestCase):
             sp[1].close()
         else:
             sp = [socket.socket()]
-            sp.append(sp[0]._sock)
+            if PY2:
+                sp.append(sp[0]._sock)
 
         try:
             orig = (openFile, closedFile, sys.__stdout__, socket_, sp)
@@ -2016,9 +2060,9 @@ class PicklingTest(TestCase):
 
     def testObjectWithHostile__getattribute__2(self):
         orig = ClassWithHostile__getattribute__(True)
-        p = self.dumpWithPreobjects(None, orig, dis=False)
+        p = self.dumpWithPreobjects(None, orig, dis=True)
         # import pickle as pickle_ ; pickler.cPickle =  pickle_
-        restored = self.pickler.loads(p)[-1]
+        restored = self.pickler.loads(p, useCPickle=False)[-1]
         self.assertIsNot(restored, orig)
         self.assertIsInstance(restored, orig.__class__)
 
@@ -2028,13 +2072,16 @@ class PicklingTest(TestCase):
 
     def testClassicNull(self):
         orig = ClassicNull()
-        self.assertRaisesRegexp(RuntimeError, 'maximum recursion depth exceeded', self.pickler.dumps, orig)
+        if PY2:
+            self.assertRaisesRegexp(RuntimeError, 'maximum recursion depth exceeded', self.pickler.dumps, orig)
+        else:
+            self.assertRaises(TypeError, "__getnewargs__ should return a tuple, not 'ClassicNull'", self.pickler.dumps, orig)
 
 
 class FailSaveTest(TestCase):
     def setUp(self):
         super(FailSaveTest, self).setUp()
-        self.file = BytesIO()
+        self.file = io.BytesIO()
         self.pickler = _sPickle.FailSavePickler(self.file, -1)
         self.pickler.get_replacement = self.get_replacement
         self.unpickleable = UnpickleableClass()
@@ -2128,6 +2175,8 @@ class FailSaveTest(TestCase):
     def testClassicNull(self):
         self.unpickleable = ClassicNull()
         self.surrogateFactory = lambda x, obj: [x]
+        if PY3:
+            self.expectedException = TypeError
         self.unpickleable_test()
 
 
@@ -2156,6 +2205,7 @@ NT = collections.namedtuple("NT", "a")
 
 
 class PythonBugsTest(TestCase):
+    @skipUnless(PY2, "Python 2.7 only")
     def testNamedTupleIssue18015(self):
         # test Python 2.7.5 bug http://bugs.python.org/issue18015
         pickle273 = b'\x80\x02c%s\nNT\nK\x01\x85\x81ccollections\nOrderedDict\n]](U\x01aK\x01ea\x85Rb.' % (__name__,)

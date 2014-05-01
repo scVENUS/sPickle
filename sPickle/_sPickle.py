@@ -48,6 +48,7 @@ else:
     del _f3
     del _f4
     CLOSED_SOCKET_TYPES = ()
+    basestring = (str,)
 
 import pickle
 if PY2:
@@ -64,18 +65,12 @@ import operator
 import functools
 import inspect
 if PY2:
-    import copy_reg as copyreg
+    import copy_reg as copyreg  # @UnresolvedImport
 else:
     import copyreg
 import types
 from pickle import PickleError, PicklingError  # @UnusedImport
-if PY2:
-    try:
-        from cStringIO import StringIO as BytesIO
-    except ImportError:
-        from StringIO import StringIO as BytesIO
-else:
-    from io import BytesIO
+import io
 from bz2 import compress, decompress
 import struct
 import tempfile
@@ -329,7 +324,11 @@ class List2Writable(object):
         self.write = listish.append
 
 
-class Pickler(pickle.Pickler):
+pickle_Pickler = pickle.Pickler if PY2 else pickle._Pickler
+pickle_Unpickler = pickle.Unpickler if PY2 else pickle._Unpickler
+
+
+class Pickler(pickle_Pickler):
     """The sPickle Pickler.
 
     This Pickler is a subclass of :class:`pickle.Pickler` that adds the ability
@@ -337,14 +336,55 @@ class Pickler(pickle.Pickler):
     API-compatible with :class:`pickle.Pickler` so you can use it as a plug in
     replacement. However its constructor has more optional arguments.
     """
+    if PY3:
+        exec('''def _Pickler__init__3(self, file, protocol=None, *, fix_imports=True,
+                 serializeableModules=None, mangleModuleName=None):
+        """This takes a binary file for writing a pickle data stream.
 
-    def __init__(self, file,  # @ReservedAssignment
+        The optional protocol argument tells the pickler to use the
+        given protocol; supported protocols are 0, 1, 2, 3.  The default
+        protocol is 3; a backward-incompatible protocol designed for
+        Python 3.0.
+
+        Specifying a negative protocol version selects the highest
+        protocol version supported.  The higher the protocol used, the
+        more recent the version of Python needed to read the pickle
+        produced.
+
+        The file argument must have a write() method that accepts a single
+        bytes argument. It can thus be a file object opened for binary
+        writing, a io.BytesIO instance, or any other custom object that
+        meets this interface.
+
+        If fix_imports is True and protocol is less than 3, pickle will try to
+        map the new Python 3.x names to the old module names used in Python
+        2.x, so that the pickle data stream is readable with Python 2.x.
+        """
+        if protocol is None:
+            protocol = pickle.DEFAULT_PROTOCOL
+
+        def super_init(file_):
+            pickle_Pickler.__init__(self, file_, protocol, fix_imports=fix_imports)
+        self._spickle_init(super_init, file, protocol, serializeableModules, mangleModuleName)
+''')
+
+    if PY2:
+        def __init__2(self, file,  # @ReservedAssignment
+                 protocol=pickle.HIGHEST_PROTOCOL,
+                 serializeableModules=None, mangleModuleName=None):
+            def super_init(file_):
+                pickle_Pickler.__init__(self, file_, protocol)
+            self._spickle_init(super_init, file, protocol, serializeableModules, mangleModuleName)
+
+    __init__ = __init__2 if PY2 else __init__3
+
+    def _spickle_init(self, super_init, file,  # @ReservedAssignment
                  protocol=pickle.HIGHEST_PROTOCOL,
                  serializeableModules=None, mangleModuleName=None):
         """
         The file argument must be either an instance of :class:`collections.MutableSequence`
         or have a `write(str)` - method that accepts a single
-        string argument.  It can thus be an open file object, a BytesIO
+        string argument.  It can thus be an open file object, a io.BytesIO
         object, or any other custom object that meets this interface.
         As an alternative you can use a list or any other instance of
         collections.MutableSequence.
@@ -410,20 +450,23 @@ class Pickler(pickle.Pickler):
             listish = []
             self.__write = file.write
 
-        pickle.Pickler.__init__(self, List2Writable(listish), protocol)
+        super_init(List2Writable(listish))
         self.writeList = listish
 
         # copy and patch the dispatch table
         self.dispatch = self.__class__.dispatch.copy()
-        for k in pickle.Pickler.dispatch.iterkeys():
-            f = getattr(Pickler, pickle.Pickler.dispatch[k].__name__, None)
-            if f.__func__ is not pickle.Pickler.dispatch[k]:
-                self.dispatch[k] = f.__func__
+        for k in pickle_Pickler.dispatch:
+            f = getattr(Pickler, pickle_Pickler.dispatch[k].__name__, None)
+            if inspect.ismethod(f):
+                f = f.__func__
+            if f is not pickle_Pickler.dispatch[k]:
+                self.dispatch[k] = f
         self.dispatch[types.FunctionType] = self.save_function.__func__
         self.dispatch[types.CodeType] = self.saveCode.__func__
         self.dispatch[CELL_TYPE] = self.saveCell.__func__
         self.dispatch[_thread.LockType] = self.saveLock.__func__
-        self.dispatch[types.FileType] = self.saveFile.__func__
+        if PY2:
+            self.dispatch[types.FileType] = self.saveFile.__func__
         self.dispatch[socket.SocketType] = self.saveSocket.__func__
         self.dispatch[SOCKET_PAIR_TYPE] = self.saveSocketPairSocket.__func__
         self.dispatch[WRAPPER_DESCRIPTOR_TYPE] = self.saveDescriptorWithObjclass.__func__
@@ -435,7 +478,7 @@ class Pickler(pickle.Pickler):
         self.dispatch[property] = self.saveProperty.__func__
         self.dispatch[operator.itemgetter] = self.saveOperatorItemgetter.__func__
         self.dispatch[operator.attrgetter] = self.saveOperatorAttrgetter.__func__
-        self.dispatch[types.DictProxyType] = self.saveDictProxy.__func__
+        self.dispatch[types.DictProxyType if PY2 else types.MappingProxyType] = self.saveDictProxy.__func__
         self.dispatch[CSTRINGIO_OUTPUT_TYPE] = self.saveCStringIoOutput.__func__
         self.dispatch[CSTRINGIO_INPUT_TYPE] = self.saveCStringIoInput.__func__
         self.dispatch[collections.OrderedDict] = self.saveOrderedDict.__func__
@@ -507,7 +550,7 @@ class Pickler(pickle.Pickler):
         """Write a pickled representation of obj to the open file."""
         try:
             if self.proto >= 2:
-                self.write(pickle.PROTO + chr(self.proto))
+                self.write(pickle.PROTO + struct.pack("<B", self.proto))
             self.do_checkpoint(obj, self.save)
             self.write(pickle.STOP)
         finally:
@@ -531,7 +574,7 @@ class Pickler(pickle.Pickler):
                 currentSave = None
                 # Check the memo again, in case of a backtrack, that created obj
                 x = self.memo.get(id(obj))
-                if x:
+                if x is not None:
                     self.write(self.get(x[0]))
                     return
                 method(obj, *args, **kw)
@@ -548,9 +591,9 @@ class Pickler(pickle.Pickler):
 
                 saveList.insert(0, holder)
                 del self.writeList[writePos:]
-                for k in memo.keys():
+                for k in list(memo.keys()):
                     v = memo[k]
-                    if isinstance(v, types.TupleType):
+                    if isinstance(v, tuple):
                         if v[0] >= memoPos:
                             del memo[k]
 
@@ -569,7 +612,7 @@ class Pickler(pickle.Pickler):
 
         # Check the memo
         x = self.memo.get(id(obj))
-        if x:
+        if x is not None:
             self.write(self.get(x[0]))
             return
 
@@ -578,7 +621,7 @@ class Pickler(pickle.Pickler):
         except Exception:
             pass
         else:
-            if isinstance(objDict, types.DictType):
+            if isinstance(objDict, dict):
                 dictId = id(objDict)
                 x = self.memo.get(dictId)
                 if x is not None:
@@ -589,7 +632,7 @@ class Pickler(pickle.Pickler):
             if self.saveModule(obj):
                 return
 
-        super_save = pickle.Pickler.save
+        super_save = pickle_Pickler.save
         if isinstance(obj, types.FrameType):
             trace_func = obj.f_trace
             if trace_func is not None:
@@ -648,7 +691,7 @@ class Pickler(pickle.Pickler):
 
         if (isinstance(obj, types.BuiltinMethodType) and
             hasattr(obj, "__self__") and
-            obj.__self__ is not None):
+            obj.__self__ is not None and not isinstance(obj.__self__, types.ModuleType)):  # PY3: getattr.__self__ is builtins
             return self.saveBuiltinMethod(obj)
 
         # avoid problems with some classes, that implement
@@ -668,7 +711,7 @@ class Pickler(pickle.Pickler):
         except Exception:
             pass
         else:
-            if isinstance(objDict, types.DictType):
+            if isinstance(objDict, dict):
                 dictId = id(objDict)
                 # x = self.memo.get(dictId)
                 self.object_dict_ids[dictId] = obj
@@ -679,7 +722,7 @@ class Pickler(pickle.Pickler):
                          id(obj), obj, type(obj),
                          m[0], m[1], type(m[1]))
             self._dumpSaveStack()
-        pickle.Pickler.memoize(self, obj)
+        pickle_Pickler.memoize(self, obj)
         if _trace_memo_entries:
             i = id(obj)
             m = self.memo.get(i)
@@ -810,7 +853,8 @@ class Pickler(pickle.Pickler):
             write(pickle.MARK + pickle.DICT)
 
         self.memoize(obj)
-        self._batch_setitems(obj.iteritems())
+        iterator = obj.iteritems() if PY2 else iter(obj.items())
+        self._batch_setitems(iterator)
 
     def save_global(self, obj, name=None, pack=struct.pack):
         write = self.write
@@ -886,7 +930,7 @@ class Pickler(pickle.Pickler):
 
         mangledModule = self.mangleModuleName(module, mod)
         if isinstance(mangledModule, str):
-            write(pickle.GLOBAL + mangledModule + b'\n' + name + b'\n')
+            write(pickle.GLOBAL + mangledModule.encode("utf-8") + b'\n' + name.encode("utf-8") + b'\n')
             self.memoize(obj)
         else:
             # The module name is computed at unpickling time.
@@ -904,9 +948,9 @@ class Pickler(pickle.Pickler):
             yield
         except ex:
             del self.writeList[writePos:]
-            for k in memo.keys():
+            for k in list(memo):
                 v = memo[k]
-                if isinstance(v, types.TupleType):
+                if isinstance(v, tuple):
                     if v[0] >= memoPos:
                         del memo[k]
             raise
@@ -956,7 +1000,7 @@ class Pickler(pickle.Pickler):
         # This API is called by some subclasses
 
         # Assert that args is a tuple or None
-        if not isinstance(args, types.TupleType):
+        if not isinstance(args, tuple):
             raise PicklingError("args from reduce() should be a tuple")
 
         # Assert that func is callable
@@ -1034,7 +1078,7 @@ class Pickler(pickle.Pickler):
             save(args)
             if obj is not None:
                 x = memo.get(objId)
-                if x:
+                if x is not None:
                     # obviously save(args) created obj. No need to continue
                     write(pickle.POP)  # func
                     write(pickle.POP)  # args
@@ -1065,7 +1109,8 @@ class Pickler(pickle.Pickler):
         objId = id(obj)
 
         # in order to avoid a possible recursion, save the function, class and instance first
-        im_class = obj.im_class
+        im_self = obj.__self__
+        im_class = obj.im_class if PY2 else type(im_self)
         if im_class is not None and id(im_class) not in memo:
             self.save(im_class)
             self.write(pickle.POP)
@@ -1076,7 +1121,6 @@ class Pickler(pickle.Pickler):
                 self.write(self.get(x[0]))
                 return
 
-        im_self = obj.im_self
         if im_self is not None and id(im_self) not in memo:
             self.save(im_self)
             self.write(pickle.POP)
@@ -1086,7 +1130,7 @@ class Pickler(pickle.Pickler):
                 self.write(self.get(x[0]))
                 return
 
-        im_func = obj.im_func
+        im_func = obj.__func__
         if im_func and id(im_func) not in memo:
             # try to get the function from the class.
             from_class = False
@@ -1101,10 +1145,10 @@ class Pickler(pickle.Pickler):
                         with self.rollback_on_exception():
                             self.save_reduce(getattr, args, obj=im_func)
                             from_class = True
-                    elif isinstance(m, types.MethodType) and m.im_func is im_func:
+                    elif isinstance(m, types.MethodType) and m.__func__ is im_func:
                         with self.rollback_on_exception():
                             args = (im_class, im_func.__name__)
-                            args = (SPickleTools.reducer(getattr, args), 'im_func')
+                            args = (SPickleTools.reducer(getattr, args), '__func__')
                             self.save_reduce(getattr, args, obj=im_func)
                             from_class = True
             if not from_class:
@@ -1116,7 +1160,9 @@ class Pickler(pickle.Pickler):
                 self.write(self.get(x[0]))
                 return
 
-        self.save_reduce(types.MethodType, (im_func, im_self, im_class), obj=obj)
+        self.save_reduce(types.MethodType,
+                         (im_func, im_self, im_class) if PY2 else (im_func, im_self),
+                         obj=obj)
 
     def saveFunction(self, obj):
         memo = self.memo
@@ -1171,20 +1217,36 @@ class Pickler(pickle.Pickler):
         self.write(pickle.POP)
 
     def saveCode(self, obj):
-        self.save_reduce(types.CodeType, (obj.co_argcount,
-                                          obj.co_nlocals,
-                                          obj.co_stacksize,
-                                          obj.co_flags,
-                                          obj.co_code,
-                                          obj.co_consts,
-                                          obj.co_names,
-                                          obj.co_varnames,
-                                          obj.co_filename,
-                                          obj.co_name,
-                                          obj.co_firstlineno,
-                                          obj.co_lnotab,
-                                          obj.co_freevars,
-                                          obj.co_cellvars), obj=obj)
+        args = (obj.co_argcount,
+                obj.co_nlocals,
+                obj.co_stacksize,
+                obj.co_flags,
+                obj.co_code,
+                obj.co_consts,
+                obj.co_names,
+                obj.co_varnames,
+                obj.co_filename,
+                obj.co_name,
+                obj.co_firstlineno,
+                obj.co_lnotab,
+                obj.co_freevars,
+                obj.co_cellvars) if PY2 else (
+                obj.co_argcount,
+                obj.co_kwonlyargcount,
+                obj.co_nlocals,
+                obj.co_stacksize,
+                obj.co_flags,
+                obj.co_code,
+                obj.co_consts,
+                obj.co_names,
+                obj.co_varnames,
+                obj.co_filename,
+                obj.co_name,
+                obj.co_firstlineno,
+                obj.co_lnotab,
+                obj.co_freevars,
+                obj.co_cellvars)
+        self.save_reduce(types.CodeType, args, obj=obj)
 
     def saveCell(self, obj):
         self.save_reduce(create_cell, (obj.cell_contents,), obj=obj)
@@ -1209,8 +1271,14 @@ class Pickler(pickle.Pickler):
         f = type(obj)
         name = obj.__name__
         d1 = {}
+        if PY3:
+            try:
+                d1['__qualname__'] = obj.__qualname__
+            except AttributeError:
+                pass
         d2 = {}
-        for (k, v) in obj.__dict__.iteritems():
+        for k in obj.__dict__:
+            v = obj.__dict__[k]
             if k == '__module__':
                 d1[k] = self._saveMangledModuleName(v)
                 continue
@@ -1246,7 +1314,7 @@ class Pickler(pickle.Pickler):
         # save_reduce method (pickle BUILD-opcode), because BUILD
         # invokes a __setstate__ method eventually inherited from
         # a super class.
-        keys = d2.keys()
+        keys = list(d2)
         keys.sort()
         for k in keys:
             v = d2[k]
@@ -1267,10 +1335,11 @@ class Pickler(pickle.Pickler):
         obj_name = obj.__name__
         obj_dict = obj.__dict__
         self.module_dict_ids[id(obj_dict)] = obj
-        if obj is not sys.modules.get(obj_name):
+        sys_modules = sys.modules
+        if obj is not sys_modules.get(obj_name):
             # either an anonymous module or it did change its __name__
-            for k, v in sys.modules.iteritems():
-                if obj is v:
+            for k in sys_modules:
+                if obj is sys_modules.get(k):
                     obj_name = k
 
         pickledModuleName = self._saveMangledModuleName(obj_name, module=obj)
@@ -1290,7 +1359,7 @@ class Pickler(pickle.Pickler):
             if isinstance(pickledModuleName, str):
                 # import __dict__ from the module. It is always present, because obj is a module
                 # mod = sys.modules[pickledModuleName]
-                self.write(pickle.GLOBAL + pickledModuleName + b'\n__dict__\n')
+                self.write(pickle.GLOBAL + pickledModuleName.encode('utf-8') + b'\n__dict__\n')
             else:
                 # dynamic import version of the following code
                 # __import__(pickledModuleName)
@@ -1545,7 +1614,7 @@ class Pickler(pickle.Pickler):
         else:
             rv = reduce_(self.proto)
 
-        if type(rv) is types.StringType:
+        if type(rv) is str:
             self.save_global(obj, rv)
             return
 
@@ -1626,8 +1695,13 @@ class Pickler(pickle.Pickler):
             # 2. locate the pickler object
             pickler = None
             fr = fr1
-            savecode = Pickler.save.im_func.__code__
-            dumpcode = cls.dump.im_func.__code__
+            savecode = Pickler.save
+            dumpcode = cls.dump
+            if PY2:
+                savecode = savecode.__func__
+                dumpcode = dumpcode.__func__
+            savecode = savecode.__code__
+            dumpcode = dumpcode.__code__
 
             # A note about stack analysis: it is important not to access
             # frame.f_locals unless absolutely necessary. Accessing f_locals creates a
@@ -1899,7 +1973,7 @@ class SPickleTools(object):
         :rtype: :class:`str`
         """
         l = []
-        pickler = self.pickler_class(l, 2, serializeableModules=self.serializeableModules, mangleModuleName=mangleModuleName)
+        pickler = self.pickler_class(l, -1, serializeableModules=self.serializeableModules, mangleModuleName=mangleModuleName)
         if persistent_id is not None and persistent_id_method is not None:
             raise ValueError("At least one of persistent_id and persistent_id_method must be None")
         if persistent_id is not None:
@@ -2011,27 +2085,26 @@ class SPickleTools(object):
         :return: the reconstructed object
         :rtype: object
         """
-        if str_.startswith("BZh9"):
+        if str_.startswith(b"BZh9"):
             str_ = decompress(str_)
-        file_ = BytesIO(str_)
+        file_ = io.BytesIO(str_)
         if unpickler_class is None:
-            p = cPickle if useCPickle else pickle
-            unpickler_class = p.Unpickler
+            unpickler_class = cPickle.Unpickler if useCPickle else pickle_Unpickler
         unpickler = unpickler_class(file_)
         if persistent_load is not None:
             unpickler.persistent_load = persistent_load
         return unpickler.load()
 
     @classmethod
-    def dis(cls, str_, out=None, memo=None, indentlevel=4):
+    def dis(cls, bytes_, out=None, memo=None, indentlevel=4):
         """
         Disassemble an optionally compressed pickle.
 
         See function :func:`pickletools.dis` for details.
         """
-        if str_.startswith("BZh9"):
-            str_ = decompress(str_)
-        pickletools.dis(str_, out, memo, indentlevel)
+        if bytes_.startswith(b"BZh9"):
+            bytes_ = decompress(bytes_)
+        pickletools.dis(bytes_, out, memo, indentlevel)
 
     @classmethod
     def getImportList(cls, str_):
@@ -2040,7 +2113,7 @@ class SPickleTools(object):
 
         Somtimes useful for debuging.
         """
-        if str_.startswith("BZh9"):
+        if str_.startswith(b"BZh9"):
             str_ = decompress(str_)
         importModules = []
         opcodesIt = pickletools.genops(str_)
@@ -2185,6 +2258,7 @@ class SPickleTools(object):
         g = None
         modules = []
         result = set()
+        sys_modules = sys.modules
         if isinstance(callable_or_moduledict, dict):
             g = callable_or_moduledict
         else:
@@ -2195,7 +2269,7 @@ class SPickleTools(object):
                 except Exception:
                     pass
             if inspect.ismethod(func):
-                func = func.im_func
+                func = func.__func__
                 if withDefiningModules:
                     try:
                         modules.append(func.__module__)
@@ -2205,11 +2279,12 @@ class SPickleTools(object):
                 g = func.__globals__
         for v in modules:
             if v:
-                m = sys.modules.get(v)
+                m = sys_modules.get(v)
                 if m is not None:
                     result.add(m)
         if g is not None:
-            for m in sys.modules.itervalues():
+            for k in sys_modules:
+                m = sys_modules[k]
                 if g is getattr(m, '__dict__', None):
                     result.add(m)
         if len(result) == 0:
