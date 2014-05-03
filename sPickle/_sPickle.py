@@ -27,7 +27,7 @@ import socket
 PY2 = sys.version_info[0] == 2
 PY3 = sys.version_info[0] == 3
 if PY2:
-    range = xrange
+    range = xrange  # @ReservedAssignment
     FILE_TYPES = (file,)
     CLOSED_SOCKET_TYPES = (socket._closedsocket,)
 else:
@@ -48,7 +48,7 @@ else:
     del _f3
     del _f4
     CLOSED_SOCKET_TYPES = ()
-    basestring = (str,)
+    basestring = (str,)  # @ReservedAssignment
 
 import pickle
 if PY2:
@@ -57,17 +57,17 @@ else:
     cPickle = pickle
 import pickletools
 if PY2:
-    import thread as _thread
+    import thread as _thread  # @UnusedImport
 else:
-    import _thread
+    import _thread  # @UnresolvedImport @Reimport
 import collections
 import operator
 import functools
 import inspect
 if PY2:
-    import copy_reg as copyreg  # @UnresolvedImport
+    import copy_reg as copyreg  # @UnresolvedImport @UnusedImport
 else:
-    import copyreg
+    import copyreg  # @UnresolvedImport @Reimport
 import types
 from pickle import PickleError, PicklingError  # @UnusedImport
 import io
@@ -234,6 +234,24 @@ def create_null_file(mode, closed):
     return f
 
 
+def create_null_iofile(name, closed, open_args):
+    """recreate a file object"""
+    f = io.open(os.devnull, **open_args)
+    raw = f
+    try:
+        raw = raw.buffer
+    except AttributeError:
+        pass
+    try:
+        raw = raw.raw
+    except AttributeError:
+        pass
+    raw.name = name
+    if closed:
+        f.close()
+    return f
+
+
 def create_closed_socket():
     """recreate a file object"""
     s = socket.socket()
@@ -241,16 +259,27 @@ def create_closed_socket():
     return s
 
 
-def create_closed_socketpair_socket():
-    if hasattr(socket, "socketpair"):
-        sp = socket.socketpair()
-        sp[0].close()
-        sp[1].close()
-        return sp[0]
-    so = socket.socket()
-    s = so._sock
-    so.close()
-    return s
+if PY2:
+    def create_closed_socketpair_socket():
+        if hasattr(socket, "socketpair"):
+            sp = socket.socketpair()
+            sp[0].close()
+            sp[1].close()
+            return sp[0]
+        so = socket.socket()
+        s = so._sock
+        so.close()
+        return s
+else:
+    def create_closed_socketpair_socket():
+        if hasattr(socket, "socketpair"):
+            sp = socket.socketpair()
+            sp[0].close()
+            sp[1].close()
+            return sp[0]
+        so = socket.socket()
+        so.close()
+        return so
 
 
 def create_cell(obj):
@@ -268,6 +297,7 @@ if True:
                       'pickle': pickle,
                       'os': os,
                       'socket': socket,
+                      'io': io,
                       '__builtins__': __builtins__}
     __func = type(create_module)
 #    import_module=__func(import_module.__code__, {'sys': None, '__import__': __import__}, 'import_module_')
@@ -279,6 +309,7 @@ if True:
                                  restore_modules_entry.__defaults__)
     create_thread_lock = __func(create_thread_lock.__code__, __GLOBALS_DICT, 'create_thread_lock_')
     create_null_file = __func(create_null_file.__code__, __GLOBALS_DICT, 'create_null_file_')
+    create_null_iofile = __func(create_null_iofile.__code__, __GLOBALS_DICT, 'create_null_iofile_')
     create_closed_socket = __func(create_closed_socket.__code__, __GLOBALS_DICT, 'create_closed_socket_')
     create_closed_socketpair_socket = __func(create_closed_socketpair_socket.__code__,
                                              __GLOBALS_DICT,
@@ -324,8 +355,8 @@ class List2Writable(object):
         self.write = listish.append
 
 
-pickle_Pickler = pickle.Pickler if PY2 else pickle._Pickler
-pickle_Unpickler = pickle.Unpickler if PY2 else pickle._Unpickler
+pickle_Pickler = pickle.Pickler if PY2 else pickle._Pickler  # @UndefinedVariable
+pickle_Unpickler = pickle.Unpickler if PY2 else pickle._Unpickler  # @UndefinedVariable
 
 
 class Pickler(pickle_Pickler):
@@ -376,7 +407,7 @@ class Pickler(pickle_Pickler):
                 pickle_Pickler.__init__(self, file_, protocol)
             self._spickle_init(super_init, file, protocol, serializeableModules, mangleModuleName)
 
-    __init__ = __init__2 if PY2 else __init__3
+    __init__ = __init__2 if PY2 else __init__3  # @UndefinedVariable
 
     def _spickle_init(self, super_init, file,  # @ReservedAssignment
                  protocol=pickle.HIGHEST_PROTOCOL,
@@ -467,7 +498,14 @@ class Pickler(pickle_Pickler):
         self.dispatch[_thread.LockType] = self.saveLock.__func__
         if PY2:
             self.dispatch[types.FileType] = self.saveFile.__func__
+        self.dispatch[io.FileIO] = self.saveFile.__func__
+        self.dispatch[io.BufferedReader] = self.saveBufferedReaderWriter.__func__
+        self.dispatch[io.BufferedWriter] = self.saveBufferedReaderWriter.__func__
+        self.dispatch[io.BufferedRandom] = self.saveBufferedReaderWriter.__func__
+        self.dispatch[io.TextIOWrapper] = self.saveTextIOWrapper.__func__
         self.dispatch[socket.SocketType] = self.saveSocket.__func__
+        if PY3:
+            self.dispatch[socket.socket] = self.saveSocket.__func__
         self.dispatch[SOCKET_PAIR_TYPE] = self.saveSocketPairSocket.__func__
         self.dispatch[WRAPPER_DESCRIPTOR_TYPE] = self.saveDescriptorWithObjclass.__func__
         self.dispatch[METHOD_DESCRIPTOR_TYPE] = self.saveDescriptorWithObjclass.__func__
@@ -478,7 +516,7 @@ class Pickler(pickle_Pickler):
         self.dispatch[property] = self.saveProperty.__func__
         self.dispatch[operator.itemgetter] = self.saveOperatorItemgetter.__func__
         self.dispatch[operator.attrgetter] = self.saveOperatorAttrgetter.__func__
-        self.dispatch[types.DictProxyType if PY2 else types.MappingProxyType] = self.saveDictProxy.__func__
+        self.dispatch[types.DictProxyType if PY2 else types.MappingProxyType] = self.saveDictProxy.__func__  # @UndefinedVariable
         self.dispatch[CSTRINGIO_OUTPUT_TYPE] = self.saveCStringIoOutput.__func__
         self.dispatch[CSTRINGIO_INPUT_TYPE] = self.saveCStringIoInput.__func__
         self.dispatch[collections.OrderedDict] = self.saveOrderedDict.__func__
@@ -1455,7 +1493,7 @@ class Pickler(pickle_Pickler):
     def saveLock(self, obj):
         return self.save_reduce(create_thread_lock, (obj.locked(), ), obj=obj)
 
-    def saveFile(self, obj):
+    def saveWellKnownFile(self, obj):
         sysname = None
         if obj is sys.stdout:
             sysname = "stdout"
@@ -1471,13 +1509,63 @@ class Pickler(pickle_Pickler):
             sysname = "__stdin__"
         if sysname:
             LOGGER().info("Pickling a reference to sys.%s", sysname)
-            self.write(pickle.GLOBAL + b"sys" + b'\n' + sysname + b'\n')
+            self.write(pickle.GLOBAL + b"sys" + b'\n' + sysname.encode("utf-8") + b'\n')
             self.memoize(obj)
+            return True
+        return None
+
+    def saveFile(self, obj):
+        if self.saveWellKnownFile(obj):
             return
-        LOGGER().warn("Pickling file %r as null-file", obj)
-        mode = getattr(obj, "mode", "rwb")
         closed = getattr(obj, "closed", False)
-        return self.save_reduce(create_null_file, (mode, closed), obj=obj)
+        if not closed:
+            LOGGER().warn("Pickling open file %r as null-file", obj)
+        mode = getattr(obj, "mode", "rwb")
+        if PY2 and isinstance(obj, file):
+            return self.save_reduce(create_null_file, (mode, closed), obj=obj)
+        name = getattr(obj, "name", "")
+        buffering = 0 if isinstance(obj, io.FileIO) else -1
+        return self.save_reduce(create_null_iofile, (name, closed, dict(mode=mode, buffering=buffering)), obj=obj)
+
+    def saveBufferedReaderWriter(self, obj):
+        if obj.closed:
+            # it is not possible to create an io.BufferedReader/Writer/Random object
+            # using a closed file. Therefore we can't preserve the object graph in this case.
+            return self.saveFile(obj)
+        if self.saveWellKnownFile(obj):
+            return
+        raw = obj.raw
+        return self.save_reduce(type(obj), (raw,), obj=obj)
+
+    def saveTextIOWrapper(self, obj):
+        if self.saveWellKnownFile(obj):
+            return
+        encoding = obj.encoding
+        errors = obj.errors
+        line_buffering = obj.line_buffering
+        if obj.closed:
+            # it is not possible to create an io.BufferedReader/Writer/Random object
+            # using a closed file. Therefore we can't preserve the object graph in this case.
+            open_args = dict(encoding=encoding,
+                             errors=errors)
+            if line_buffering:
+                open_args['buffering'] = 1
+            try:
+                open_args['mode'] = obj.mode
+            except AttributeError:
+                pass
+            name = getattr(obj, "name", "")
+            return self.save_reduce(create_null_iofile, (name, True, open_args), obj=obj)
+        buffer_ = obj.buffer
+        # it is not possible to introspect the newline argument. ==> None
+        state = None
+        try:
+            state = dict(mode=obj.mode)  # unfortunately, the __dict__ is not accessible
+            # We use the slotstate, because this forces the unpickler to use setattr
+            state = (None, state)
+        except AttributeError:
+            pass
+        return self.save_reduce(type(obj), (buffer_, encoding, errors, None, line_buffering), state, obj=obj)
 
     def saveSocket(self, obj):
         LOGGER().warn("Pickling socket %r as closed socket", obj)
