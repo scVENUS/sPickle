@@ -21,6 +21,7 @@ from __future__ import absolute_import, division, print_function
 from unittest import TestCase, skipIf, skipUnless
 
 import pickletools
+import io
 from StringIO import StringIO
 import cStringIO
 import pickle
@@ -1951,6 +1952,169 @@ class PicklingTest(TestCase):
             openFile.close()
             socket_.close()
             sp[0].close()
+
+    def _inMemoryIoTest(self, orig, dis):
+        orig.seek(3)
+        orig.another_attribute = 4711
+        orig_state = orig.__getstate__()
+        p = self.dumpWithPreobjects(None, orig, dis=dis)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIs(type(obj), type(orig))
+        self.assertEqual(obj.__getstate__(), orig_state)
+
+    def testIoBytesIo(self):
+        orig = io.BytesIO(b"foo_bar")
+        self._inMemoryIoTest(orig, dis=False)
+
+    def testIoStringIo(self):
+        orig = io.StringIO(u"foo_bar")
+        self._inMemoryIoTest(orig, dis=False)
+
+    def testRawIoFileType(self):
+        with io.open(os.devnull, "rb", buffering=0) as f:
+            orig = type(f)
+        self.assertIs(orig, io.FileIO)
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testBinaryReadIoFileType(self):
+        with io.open(os.devnull, "rb") as f:
+            orig = type(f)
+        self.assertIs(orig, io.BufferedReader)
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testBinaryWriteIoFileType(self):
+        with io.open(os.devnull, "wb") as f:
+            orig = type(f)
+        self.assertIs(orig, io.BufferedWriter)
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testBinaryRandomIoFileType(self):
+        with io.open(os.devnull, "rb+") as f:
+            orig = type(f)
+        self.assertIs(orig, io.BufferedRandom)
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def testTextIoType(self):
+        with io.open(os.devnull, "rt") as f:
+            orig = type(f)
+        self.assertIs(orig, io.TextIOWrapper)
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIs(obj, orig)
+
+    def _ioFileTest(self, orig):
+        try:
+            raw = orig.raw
+            hasRaw = True
+        except AttributeError:
+            raw = orig
+            hasRaw = False
+        raw.name = 'foo_bar_blub'
+        p = self.dumpWithPreobjects(raw, orig, dis=False)
+        robj, obj = self.pickler.loads(p)
+        self.assertIsNot(robj, raw)
+        self.assertIsNot(obj, orig)
+        self.assertIs(type(obj), type(orig))
+        self.assertEqual(bool(obj.closed), bool(orig.closed))
+        self.assertEqual(obj.name, orig.name)
+        self.assertEqual(obj.mode, orig.mode)
+        if hasRaw and not obj.closed:
+            # we can't preserve the object graph, if the raw
+            # object is closed.
+            self.assertIs(obj.raw, robj)
+
+    def testClosedRawIoFile(self):
+        with io.open(os.devnull, "rb", buffering=0) as orig:
+            pass
+        self.assertIsInstance(orig, io.FileIO)
+        self.assertTrue(orig.closed)
+        self._ioFileTest(orig)
+
+    def testRawIoFile(self):
+        with io.open(os.devnull, "wb", buffering=0) as orig:
+            self.assertIsInstance(orig, io.FileIO)
+            self.assertFalse(orig.closed)
+            self._ioFileTest(orig)
+
+    def testClosedBinaryReadIoFile(self):
+        with io.open(os.devnull, "rb") as orig:
+            pass
+        self.assertIsInstance(orig, io.BufferedReader)
+        self.assertTrue(orig.closed)
+        self._ioFileTest(orig)
+
+    def testBinaryReadIoFile(self):
+        with io.open(os.devnull, "rb") as orig:
+            self.assertIsInstance(orig, io.BufferedReader)
+            self.assertFalse(orig.closed)
+            self._ioFileTest(orig)
+
+    def testClosedBinaryWriteIoFile(self):
+        with io.open(os.devnull, "wb") as orig:
+            pass
+        self.assertIsInstance(orig, io.BufferedWriter)
+        self.assertTrue(orig.closed)
+        self._ioFileTest(orig)
+
+    def testBinaryWriteIoFile(self):
+        with io.open(os.devnull, "wb") as orig:
+            self.assertIsInstance(orig, io.BufferedWriter)
+            self.assertFalse(orig.closed)
+            self._ioFileTest(orig)
+
+    def testClosedBinaryRandomIoFile(self):
+        with io.open(os.devnull, "rb+") as orig:
+            pass
+        self.assertIsInstance(orig, io.BufferedRandom)
+        self.assertTrue(orig.closed)
+        self._ioFileTest(orig)
+
+    def testBinaryRandomIoFile(self):
+        with io.open(os.devnull, "rb+") as orig:
+            self.assertIsInstance(orig, io.BufferedRandom)
+            self.assertFalse(orig.closed)
+            self._ioFileTest(orig)
+
+    def _ioTextIOWrapperTest(self, orig, dis):
+        self.assertIsInstance(orig, io.TextIOWrapper)
+        raw = orig.buffer.raw
+        raw.name = 'foo_bar_blub'
+        p = self.dumpWithPreobjects(raw, orig, dis=dis)
+        robj, obj = self.pickler.loads(p)
+        self.assertIsNot(robj, raw)
+        self.assertIsNot(obj, orig)
+        self.assertIs(type(obj), type(orig))
+        self.assertEqual(bool(obj.closed), bool(orig.closed))
+        self.assertEqual(obj.name, orig.name)
+        self.assertEqual(obj.mode, orig.mode)
+        self.assertEqual(obj.encoding, orig.encoding)
+        self.assertEqual(obj.errors, orig.errors)
+        self.assertEqual(bool(obj.line_buffering), bool(orig.line_buffering))
+        # no way to introspect orig.newline and orig.write_through
+        if not obj.closed:
+            # we can't preserve the object graph, if the raw
+            # object is closed.
+            self.assertIs(obj.buffer.raw, robj)
+
+    def testClosedTextIoFile(self):
+        with io.open(os.devnull, "r+", buffering=1, encoding='iso-8859-1', errors='xmlcharrefreplace', newline='\r\n') as orig:
+            pass
+        self.assertTrue(orig.closed)
+        self._ioTextIOWrapperTest(orig, dis=False)
+
+    def testTextIoFile(self):
+        with io.open(os.devnull, "r+", buffering=1, encoding='iso-8859-1', errors='xmlcharrefreplace', newline='\r\n') as orig:
+            self.assertFalse(orig.closed)
+            self._ioTextIOWrapperTest(orig, dis=False)
 
     #
     # Test hostile objects

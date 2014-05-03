@@ -34,6 +34,7 @@ try:
     from cStringIO import StringIO
 except ImportError:
     from StringIO import StringIO
+import io
 from bz2 import compress, decompress
 import sys
 import struct
@@ -43,6 +44,8 @@ import codecs
 import weakref
 import abc
 import contextlib
+
+PY2 = True
 
 try:
     from stackless._wrap import function as STACKLESS_FUNCTION_WRAPPER
@@ -197,6 +200,24 @@ def create_null_file(mode, closed):
     return f
 
 
+def create_null_iofile(name, closed, open_args):
+    """recreate a file object"""
+    f = io.open(os.devnull, **open_args)
+    raw = f
+    try:
+        raw = raw.buffer
+    except AttributeError:
+        pass
+    try:
+        raw = raw.raw
+    except AttributeError:
+        pass
+    raw.name = name
+    if closed:
+        f.close()
+    return f
+
+
 def create_closed_socket():
     """recreate a file object"""
     s = socket.socket()
@@ -231,6 +252,7 @@ if True:
                       'pickle': pickle,
                       'os': os,
                       'socket': socket,
+                      'io': io,
                       '__builtins__': __builtins__}
     __func = type(create_module)
 #    import_module=__func(import_module.func_code, {'sys': None, '__import__': __import__}, 'import_module_')
@@ -242,6 +264,7 @@ if True:
                                  restore_modules_entry.func_defaults)
     create_thread_lock = __func(create_thread_lock.func_code, __GLOBALS_DICT, 'create_thread_lock_')
     create_null_file = __func(create_null_file.func_code, __GLOBALS_DICT, 'create_null_file_')
+    create_null_iofile = __func(create_null_iofile.__code__, __GLOBALS_DICT, 'create_null_iofile_')
     create_closed_socket = __func(create_closed_socket.func_code, __GLOBALS_DICT, 'create_closed_socket_')
     create_closed_socketpair_socket = __func(create_closed_socketpair_socket.func_code,
                                              __GLOBALS_DICT,
@@ -382,6 +405,11 @@ class Pickler(pickle.Pickler):
         self.dispatch[CELL_TYPE] = self.saveCell.__func__
         self.dispatch[thread.LockType] = self.saveLock.__func__
         self.dispatch[types.FileType] = self.saveFile.__func__
+        self.dispatch[io.FileIO] = self.saveFile.__func__
+        self.dispatch[io.BufferedReader] = self.saveBufferedReaderWriter.__func__
+        self.dispatch[io.BufferedWriter] = self.saveBufferedReaderWriter.__func__
+        self.dispatch[io.BufferedRandom] = self.saveBufferedReaderWriter.__func__
+        self.dispatch[io.TextIOWrapper] = self.saveTextIOWrapper.__func__
         self.dispatch[socket.SocketType] = self.saveSocket.__func__
         self.dispatch[SOCKET_PAIR_TYPE] = self.saveSocketPairSocket.__func__
         self.dispatch[WRAPPER_DESCRIPTOR_TYPE] = self.saveDescriptorWithObjclass.__func__
@@ -1344,7 +1372,7 @@ class Pickler(pickle.Pickler):
     def saveLock(self, obj):
         return self.save_reduce(create_thread_lock, (obj.locked(), ), obj=obj)
 
-    def saveFile(self, obj):
+    def saveWellKnownFile(self, obj):
         sysname = None
         if obj is sys.stdout:
             sysname = "stdout"
@@ -1360,13 +1388,63 @@ class Pickler(pickle.Pickler):
             sysname = "__stdin__"
         if sysname:
             LOGGER().info("Pickling a reference to sys.%s", sysname)
-            self.write(pickle.GLOBAL + b"sys" + b'\n' + sysname + b'\n')
+            self.write(pickle.GLOBAL + b"sys" + b'\n' + sysname.encode("utf-8") + b'\n')
             self.memoize(obj)
+            return True
+        return None
+
+    def saveFile(self, obj):
+        if self.saveWellKnownFile(obj):
             return
-        LOGGER().warn("Pickling file %r as null-file", obj)
-        mode = getattr(obj, "mode", "rwb")
         closed = getattr(obj, "closed", False)
-        return self.save_reduce(create_null_file, (mode, closed), obj=obj)
+        if not closed:
+            LOGGER().warn("Pickling open file %r as null-file", obj)
+        mode = getattr(obj, "mode", "rwb")
+        if PY2 and isinstance(obj, file):
+            return self.save_reduce(create_null_file, (mode, closed), obj=obj)
+        name = getattr(obj, "name", "")
+        buffering = 0 if isinstance(obj, io.FileIO) else -1
+        return self.save_reduce(create_null_iofile, (name, closed, dict(mode=mode, buffering=buffering)), obj=obj)
+
+    def saveBufferedReaderWriter(self, obj):
+        if obj.closed:
+            # it is not possible to create an io.BufferedReader/Writer/Random object
+            # using a closed file. Therefore we can't preserve the object graph in this case.
+            return self.saveFile(obj)
+        if self.saveWellKnownFile(obj):
+            return
+        raw = obj.raw
+        return self.save_reduce(type(obj), (raw,), obj=obj)
+
+    def saveTextIOWrapper(self, obj):
+        if self.saveWellKnownFile(obj):
+            return
+        encoding = obj.encoding
+        errors = obj.errors
+        line_buffering = obj.line_buffering
+        if obj.closed:
+            # it is not possible to create an io.BufferedReader/Writer/Random object
+            # using a closed file. Therefore we can't preserve the object graph in this case.
+            open_args = dict(encoding=encoding,
+                             errors=errors)
+            if line_buffering:
+                open_args['buffering'] = 1
+            try:
+                open_args['mode'] = obj.mode
+            except AttributeError:
+                pass
+            name = getattr(obj, "name", "")
+            return self.save_reduce(create_null_iofile, (name, True, open_args), obj=obj)
+        buffer_ = obj.buffer
+        # it is not possible to introspect the newline argument. ==> None
+        state = None
+        try:
+            state = dict(mode=obj.mode)  # unfortunately, the __dict__ is not accessible
+            # We use the slotstate, because this forces the unpickler to use setattr
+            state = (None, state)
+        except AttributeError:
+            pass
+        return self.save_reduce(type(obj), (buffer_, encoding, errors, None, line_buffering), state, obj=obj)
 
     def saveSocket(self, obj):
         LOGGER().warn("Pickling socket %r as closed socket", obj)
