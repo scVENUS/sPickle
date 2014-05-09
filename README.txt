@@ -18,7 +18,9 @@ Requirements
 * RPyC is used in the unit tests; the test is skipped, if 
   import rpyc fails.
 
-(Sorry, no Python 3 support. I'll happily accept patches.)  
+(Sorry, Python 3 support is still in its beginnings. 
+See https://github.com/akruis/sPickle/tree/py3port. I'll happily accept 
+patches.)  
  
 
 Installation
@@ -56,7 +58,8 @@ differences under the hood.
 
 * sPickle supports serialisation of more types than the conventional Pickler.
   In fact, most types can be pickled now, if serialisation makes any sense 
-  for the particular type at all. 
+  for the particular type at all. But be warned: unpickling of some types
+  requires the same Python version.
  
 * A sPickle Pickler has a list-typed attribute "serializeableModules". You can
   use this attribute to determine which modules are to be pickled. For 
@@ -74,6 +77,12 @@ No further plans currently
 
 Changes
 =======
+
+Version 0.1.6
+-------------
+
+2014-05-09
+- Added limited support for pickling objects returned by io.open(). 
 
 Version 0.1.5
 -------------
