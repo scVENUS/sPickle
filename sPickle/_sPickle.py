@@ -321,7 +321,8 @@ class Pickler(pickle.Pickler):
 
     def __init__(self, file,  # @ReservedAssignment
                  protocol=pickle.HIGHEST_PROTOCOL,
-                 serializeableModules=None, mangleModuleName=None):
+                 serializeableModules=None, mangleModuleName=None,
+                 logger=None):
         """
         The file argument must be either an instance of :class:`collections.MutableSequence`
         or have a `write(str)` - method that accepts a single
@@ -353,6 +354,10 @@ class Pickler(pickle.Pickler):
           a path and case normalization as appropriate for the
           current system.
 
+        The optional argument *logger* must be an instance of class
+        :class:`logging.Logger`. If given, it is used instead of default
+        logger.
+
         Experimental feature: the optional argument *mangleModuleName*
         must be a callable with three arguments. The first argument is this
         pickler, the second the name of module and the third is `None` or
@@ -373,6 +378,11 @@ class Pickler(pickle.Pickler):
         if protocol != pickle.HIGHEST_PROTOCOL:
             raise pickle.PickleError("The sPickle Pickler supports protocol %d only. Requested protocol was %d" %
                                      (pickle.HIGHEST_PROTOCOL, protocol))
+
+        if logger is None:
+            self._logger = LOGGER()
+        else:
+            self._logger = logger
 
         if serializeableModules is None:
             serializeableModules = []
@@ -661,7 +671,7 @@ class Pickler(pickle.Pickler):
 
         if id(obj) in self.memo:
             m = self.memo[id(obj)]
-            LOGGER().error("Object already in memo! Id: %d, Obj: %r of type %r, Memo-key: %d=%r of type %r",
+            self._logger.error("Object already in memo! Id: %d, Obj: %r of type %r, Memo-key: %d=%r of type %r",
                          id(obj), obj, type(obj),
                          m[0], m[1], type(m[1]))
             self._dumpSaveStack()
@@ -670,7 +680,7 @@ class Pickler(pickle.Pickler):
             i = id(obj)
             m = self.memo.get(i)
             if isinstance(m, tuple) and m[0] in _trace_memo_entries:
-                LOGGER().error("Traced object added to memo! Id: %d, Obj: %r of type %r, Memo-key: %d=%r of type %r",
+                self._logger.error("Traced object added to memo! Id: %d, Obj: %r of type %r, Memo-key: %d=%r of type %r",
                          id(obj), obj, type(obj),
                          m[0], m[1], type(m[1]))
                 self._dumpSaveStack()
@@ -902,7 +912,7 @@ class Pickler(pickle.Pickler):
             with self.rollback_on_exception():
                 return self.save_global(obj)
         except pickle.PicklingError, e:
-            LOGGER().debug("Going to pickle function %r by value, because it can't be pickled as global: %s", obj, str(e))
+            self._logger.debug("Going to pickle function %r by value, because it can't be pickled as global: %s", obj, str(e))
 
         # Check copy_reg.dispatch_table
         reduce_ = pickle.dispatch_table.get(type(obj))
@@ -1270,7 +1280,7 @@ class Pickler(pickle.Pickler):
                     self.save_global(obj)
                     return True
                 except pickle.PicklingError:
-                    LOGGER().exception("Can't pickle anonymous module: %r", obj)
+                    self._logger.exception("Can't pickle anonymous module: %r", obj)
                     raise
 
             if isinstance(pickledModuleName, str):
@@ -1387,7 +1397,7 @@ class Pickler(pickle.Pickler):
         elif obj is sys.__stdin__:
             sysname = "__stdin__"
         if sysname:
-            LOGGER().info("Pickling a reference to sys.%s", sysname)
+            self._logger.info("Pickling a reference to sys.%s", sysname)
             self.write(pickle.GLOBAL + b"sys" + b'\n' + sysname.encode("utf-8") + b'\n')
             self.memoize(obj)
             return True
@@ -1398,7 +1408,7 @@ class Pickler(pickle.Pickler):
             return
         closed = getattr(obj, "closed", False)
         if not closed:
-            LOGGER().warn("Pickling open file %r as null-file", obj)
+            self._logger.warn("Pickling open file %r as null-file", obj)
         mode = getattr(obj, "mode", "rwb")
         if PY2 and isinstance(obj, file):
             return self.save_reduce(create_null_file, (mode, closed), obj=obj)
@@ -1447,11 +1457,11 @@ class Pickler(pickle.Pickler):
         return self.save_reduce(type(obj), (buffer_, encoding, errors, None, line_buffering), state, obj=obj)
 
     def saveSocket(self, obj):
-        LOGGER().warn("Pickling socket %r as closed socket", obj)
+        self._logger.warn("Pickling socket %r as closed socket", obj)
         return self.save_reduce(create_closed_socket, (), obj=obj)
 
     def saveSocketPairSocket(self, obj):
-        LOGGER().warn("Pickling socket-pair socket %r as closed socket", obj)
+        self._logger.warn("Pickling socket-pair socket %r as closed socket", obj)
         return self.save_reduce(create_closed_socketpair_socket, (), obj=obj)
 
     def saveBuiltinNew(self, obj):
@@ -1748,7 +1758,7 @@ class Pickler(pickle.Pickler):
                 t = "<NO REPRESENTATION AVAILABLE>"
 
             m = d.get(self.ANALYSE_MEMO_KEY, "n.a.")
-            LOGGER().info("Thing to be pickled id=%d, memo-key=%s, type=%s: %s" % (i, m, t, s))
+            self._logger.info("Thing to be pickled id=%d, memo-key=%s, type=%s: %s" % (i, m, t, s))
 
 
 class RecursionDetectedError(PicklingError):
@@ -1993,7 +2003,7 @@ class SPickleTools(object):
                         objrepr = repr(obj)
                     except Exception:
                         objrepr = "-- repr failed --"
-                LOGGER().debug("Pickling object %s of type %r using persistent id %d", objrepr, type(obj), oid)
+                self._logger.debug("Pickling object %s of type %r using persistent id %d", objrepr, type(obj), oid)
                 idmap[oid] = obj
                 return oid
             return None
