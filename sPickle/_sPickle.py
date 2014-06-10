@@ -2131,7 +2131,7 @@ class SPickleTools(object):
                         objrepr = repr(obj)
                     except Exception:
                         objrepr = "-- repr failed --"
-                self._logger.debug("Pickling object %s of type %r using persistent id %d", objrepr, type(obj), oid)
+                LOGGER().debug("Pickling object %s of type %r using persistent id %d", objrepr, type(obj), oid)
                 idmap[oid] = obj
                 return oid
             return None
