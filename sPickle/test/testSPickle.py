@@ -1188,8 +1188,7 @@ class PicklingTest(TestCase):
         self.assertSetEqual(orig_f_locals_keys, frozenset(orig.f_locals.keys()))
         obj_f_locals_keys = frozenset(obj.f_locals.keys())
         if obj_f_locals_keys:
-            # sometimes obj.f_locals is empty. I didn't investigate the cause yet,
-            # but it is probably related to the (broken) pickling implementation of Stackless
+            # sometimes obj.f_locals is empty. It is caused by Stackless issue #61.
             self.assertSetEqual(obj_f_locals_keys, orig_f_locals_keys)
         self.assertEqual(obj.f_restricted, orig.f_restricted)
 
