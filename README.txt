@@ -78,10 +78,10 @@ No further plans currently
 Changes
 =======
 
-Version 0.1.x
+Version 0.1.7
 -------------
 
-2014-xx-xx
+2014-07-12
 - Added the optional argument "logger" to class sPickle.Pickler. Can be used to
   customize or suppress logging.
 
