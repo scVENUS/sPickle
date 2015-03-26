@@ -78,6 +78,13 @@ No further plans currently
 Changes
 =======
 
+Version 0.1.8
+-------------
+
+2015-03-26
+- Added support for pickling empty cell objects.
+- PEP 8 fixes.
+
 Version 0.1.7
 -------------
 
