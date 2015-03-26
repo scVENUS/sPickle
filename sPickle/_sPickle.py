@@ -157,7 +157,7 @@ def save_modules_entry(name):
     """
     from imp import acquire_lock
     acquire_lock()
-    if not name in sys.modules:
+    if name not in sys.modules:
         return ()  # just a dummy marker
     mod = sys.modules.get(name)
     del sys.modules[name]
@@ -264,16 +264,16 @@ if True:
     create_module = __func(create_module.func_code, __GLOBALS_DICT, 'create_module_')
     save_modules_entry = __func(save_modules_entry.func_code, __GLOBALS_DICT, 'save_modules_entry_')
     restore_modules_entry = __func(restore_modules_entry.func_code,
-                                 __GLOBALS_DICT,
-                                 'restore_modules_entry_',
-                                 restore_modules_entry.func_defaults)
+                                   __GLOBALS_DICT,
+                                   'restore_modules_entry_',
+                                   restore_modules_entry.func_defaults)
     create_thread_lock = __func(create_thread_lock.func_code, __GLOBALS_DICT, 'create_thread_lock_')
     create_null_file = __func(create_null_file.func_code, __GLOBALS_DICT, 'create_null_file_')
     create_null_iofile = __func(create_null_iofile.__code__, __GLOBALS_DICT, 'create_null_iofile_')
     create_closed_socket = __func(create_closed_socket.func_code, __GLOBALS_DICT, 'create_closed_socket_')
     create_closed_socketpair_socket = __func(create_closed_socketpair_socket.func_code,
                                              __GLOBALS_DICT,
-                                            'create_closed_socketpair_socket_')
+                                             'create_closed_socketpair_socket_')
     create_cell = __func(create_cell.func_code, __GLOBALS_DICT, 'create_cell_')
     create_empty_cell = __func(create_empty_cell.func_code, __GLOBALS_DICT, 'create_empty_cell_')
     del __func
@@ -284,6 +284,7 @@ CELL_TYPE = type(NONE_CELL)
 
 
 class ObjectAlreadyPickledError(pickle.PickleError):
+
     """An object has been pickled to early
 
     Example: the dictionary of an object has been pickled prior to the object itself.
@@ -292,6 +293,7 @@ class ObjectAlreadyPickledError(pickle.PickleError):
     is the object, that must be pickled prior to the object whose
     memo key is *memoid*.
     """
+
     def __init__(self, msg, holder, memoid, *args, **kw):
         super(ObjectAlreadyPickledError, self).__init__(msg, *args, **kw)
         self.holder = holder
@@ -299,6 +301,7 @@ class ObjectAlreadyPickledError(pickle.PickleError):
 
 
 class UnpicklingWillFailError(pickle.PicklingError):
+
     """This object can be pickled, but unpickling will probably fail.
 
     This usually caused by an incomplete implementation of the pickling
@@ -308,15 +311,18 @@ class UnpicklingWillFailError(pickle.PicklingError):
 
 
 class List2Writable(object):
+
     """A simple list to file adapter.
 
     Only write is supported.
     """
+
     def __init__(self, listish):
         self.write = listish.append
 
 
 class Pickler(pickle.Pickler):
+
     """The sPickle Pickler.
 
     This Pickler is a subclass of :class:`pickle.Pickler` that adds the ability
@@ -444,7 +450,7 @@ class Pickler(pickle.Pickler):
         self.dispatch[weakref.ReferenceType] = self.saveWeakref.__func__
         self.dispatch[super] = self.saveSuper.__func__
         self.dispatch[types.MethodType] = self.saveInstanceMethod.__func__
-        if not 'stackless' in sys.modules:
+        if 'stackless' not in sys.modules:
             self.dispatch[types.FrameType] = self.save_Unpickleable.__func__
             self.dispatch[types.TracebackType] = self.save_Unpickleable.__func__
 
@@ -557,6 +563,7 @@ class Pickler(pickle.Pickler):
                             del memo[k]
 
     class TraceFunctionSurrogate(object):
+
         def __reduce__(self):
             return (sys.gettrace, ())
 
@@ -645,12 +652,12 @@ class Pickler(pickle.Pickler):
 
         # handle __new__ and similar methods of built-in types
         if (isinstance(obj, type(object.__new__)) and
-            getattr(obj, "__name__", None) in ('__new__', '__subclasshook__')):
+                getattr(obj, "__name__", None) in ('__new__', '__subclasshook__')):
             return self.saveBuiltinNew(obj)
 
         if (isinstance(obj, types.BuiltinMethodType) and
-            hasattr(obj, "__self__") and
-            obj.__self__ is not None):
+                hasattr(obj, "__self__") and
+                obj.__self__ is not None):
             return self.saveBuiltinMethod(obj)
 
         # avoid problems with some classes, that implement
@@ -678,8 +685,8 @@ class Pickler(pickle.Pickler):
         if id(obj) in self.memo:
             m = self.memo[id(obj)]
             self._logger.error("Object already in memo! Id: %d, Obj: %r of type %r, Memo-key: %d=%r of type %r",
-                         id(obj), obj, type(obj),
-                         m[0], m[1], type(m[1]))
+                               id(obj), obj, type(obj),
+                               m[0], m[1], type(m[1]))
             self._dumpSaveStack()
         pickle.Pickler.memoize(self, obj)
         if _trace_memo_entries:
@@ -687,11 +694,12 @@ class Pickler(pickle.Pickler):
             m = self.memo.get(i)
             if isinstance(m, tuple) and m[0] in _trace_memo_entries:
                 self._logger.error("Traced object added to memo! Id: %d, Obj: %r of type %r, Memo-key: %d=%r of type %r",
-                         id(obj), obj, type(obj),
-                         m[0], m[1], type(m[1]))
+                                   id(obj), obj, type(obj),
+                                   m[0], m[1], type(m[1]))
                 self._dumpSaveStack()
 
     class _ObjReplacementContainer(object):
+
         """
         An auxiliary object, that can be used to replace arbitrary objects in the pickle
 
@@ -794,13 +802,13 @@ class Pickler(pickle.Pickler):
                 if not self.mustSerialize(mod):
                     return self.save_reduce(getattr, (mod, "__dict__"), obj=obj)
         else:
-        ## Stackless addition BEGIN
+            # Stackless addition BEGIN
             modict_saver = _pickle_moduledict(self, obj)
             if modict_saver is not None:
                 mod = modict_saver[1][0]
                 if not self.mustSerialize(mod):
                     return self.save_reduce(*modict_saver, obj=obj)
-        ## Stackless addition END
+        # Stackless addition END
         write = self.write
         parent = self.object_dict_ids.get(id(obj))
         if parent is not None:
@@ -875,7 +883,7 @@ class Pickler(pickle.Pickler):
                     write(pickle.EXT4 + pack("<i", code))
                 return
 
-        ## Fg2 specific start
+        # Fg2 specific start
         if self.mustSerialize(mod):
             self.save(mod)
             self.write(pickle.POP)
@@ -928,7 +936,7 @@ class Pickler(pickle.Pickler):
                 state = rv[2]
                 if isinstance(state, tuple) and 6 == len(state):
                     pickledModule = self._saveMangledModuleName(state[5])
-                    if not pickledModule is state[5]:
+                    if pickledModule is not state[5]:
                         rv = (rv[0], rv[1], state[:5] + (pickledModule,))
         else:
             # Check for a __reduce_ex__ method, fall back to __reduce__
@@ -1477,9 +1485,9 @@ class Pickler(pickle.Pickler):
 
     def saveBuiltinNew(self, obj):
         t = obj.__self__
-        if obj is not getattr(t, obj.__name__) and  obj.__name__ != '__subclasshook__':
+        if obj is not getattr(t, obj.__name__) and obj.__name__ != '__subclasshook__':
             raise pickle.PicklingError("Can't pickle %r: it's not the same object as %s.%s" %
-                        (obj, t, obj.__name__))
+                                       (obj, t, obj.__name__))
         return self.save_reduce(getattr, (t, obj.__name__), obj=obj)
 
     def saveBuiltinMethod(self, obj):
@@ -1487,14 +1495,14 @@ class Pickler(pickle.Pickler):
         objName = obj.__name__
         if getattr(objSelf, objName, None) != obj:
             raise pickle.PicklingError("Can't pickle %r: it's not the same object as %s.%s" %
-                        (obj, objSelf, objName))
+                                       (obj, objSelf, objName))
         return self.save_reduce(getattr, (objSelf, objName), obj=obj)
 
     def saveDescriptorWithObjclass(self, obj):
         t = obj.__objclass__
         if obj is not getattr(t, obj.__name__):
             raise pickle.PicklingError("Can't pickle %r: it's not the same object as %s.%s" %
-                        (obj, t, obj.__name__))
+                                       (obj, t, obj.__name__))
         return self.save_reduce(getattr, (t, obj.__name__), obj=obj)
 
     def saveStaticOrClassmethod(self, obj):
@@ -1504,6 +1512,7 @@ class Pickler(pickle.Pickler):
         return self.save_reduce(type(obj), (obj.fget, obj.fset, obj.fdel, obj.__doc__), obj=obj)
 
     class OperatorItemgetterProbe(object):
+
         def __init__(self):
             self.items = []
 
@@ -1517,6 +1526,7 @@ class Pickler(pickle.Pickler):
         return self.save_reduce(type(obj), tuple(probe.items), obj=obj)
 
     class OperatorAttrgetterProbe(object):
+
         def __init__(self, record, index=None):
             self.record = record
             self.index = index
@@ -1540,8 +1550,8 @@ class Pickler(pickle.Pickler):
     def saveDictProxy(self, obj):
         attr = obj.get("__dict__")
         if (isinstance(attr, types.GetSetDescriptorType) and
-            attr.__name__ == "__dict__" and
-            getattr(attr.__objclass__, "__dict__", None) == obj):
+                attr.__name__ == "__dict__" and
+                getattr(attr.__objclass__, "__dict__", None) == obj):
             # probably a dict proxy of class attr.__objclass__
             return self.save_reduce(getattr, (attr.__objclass__, '__dict__'), obj=obj)
         raise pickle.PicklingError("Can't pickle %r: it is not the dict-proxy of a class dictionary" % (obj,))
@@ -1773,6 +1783,7 @@ class Pickler(pickle.Pickler):
 
 
 class RecursionDetectedError(PicklingError):
+
     def __init__(self, msg, oid, level):
         super(RecursionDetectedError, self).__init__(msg, oid, level)
         self.oid = oid
@@ -1780,6 +1791,7 @@ class RecursionDetectedError(PicklingError):
 
 
 class FailSavePickler(Pickler):
+
     """
     A failsave variant of class :class:`Pickler`.
 
@@ -1791,6 +1803,7 @@ class FailSavePickler(Pickler):
     as attribute 'get_replacement' or derive a create your own subclass
     of :class:`FailSavePickler` and override method :meth:`get_replacement`.
     """
+
     def dump(self, obj):
         self.__recursion_counter = 0
         self.__object_replacements = {}
@@ -1812,7 +1825,7 @@ class FailSavePickler(Pickler):
                     return super_save(self, obj)
             except Exception, e:
                 if (isinstance(e, pickle.PickleError) and not
-                    isinstance(e, (pickle.PicklingError, pickle.UnpicklingError))):
+                        isinstance(e, (pickle.PicklingError, pickle.UnpicklingError))):
                     # internal problems of the pickler and backtracking exceptions
                     raise
                 if isinstance(e, RecursionDetectedError):
@@ -1889,6 +1902,7 @@ class FailSavePickler(Pickler):
 
 
 class SPickleTools(object):
+
     """A collection of simple utility methods.
 
     .. warning::
@@ -1896,6 +1910,7 @@ class SPickleTools(object):
        methods. If you need a stable API use the class :class:`Pickler` directly
        or copy the code.
     """
+
     def __init__(self, serializeableModules=None, pickler_class=None):
         """
         The optional argument serializeableModules is passed
@@ -2299,6 +2314,7 @@ class SPickleTools(object):
 
 
 class StacklessTaskletReturnValueException(BaseException):
+
     """This exception can be used to return a value from a Stackless Python tasklet.
 
     Usually a tasklet has no documented way to return a value at the end of its live. But it can
@@ -2307,5 +2323,6 @@ class StacklessTaskletReturnValueException(BaseException):
     to catch this exception in normal "error" handling, it
     is derived from :exc:`BaseException` instead of :exc:`Exception`.
     """
+
     def __init__(self, value):
         self.value = value
