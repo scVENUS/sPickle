@@ -1129,6 +1129,32 @@ class PicklingTest(TestCase):
         self.assertEqual(obj.co_flags, orig.co_flags)
 
     #
+    # tests for cell objects
+    #
+    def testCell_regular(self):
+        local_var = [4711, 9876]
+        orig = (lambda: local_var).__closure__[0]
+        self.assertIs(orig.cell_contents, local_var)
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIs(type(obj), type(orig))
+        self.assertIsNot(obj.cell_contents, local_var)
+        self.assertListEqual(obj.cell_contents, local_var)
+
+    def testCell_empty(self):
+        def create_empty_cell():
+            return (lambda: local_var).__closure__[0]
+            local_var = None
+        orig = create_empty_cell()
+        self.assertRaisesRegexp(ValueError, r"Cell is empty", getattr, orig, "cell_contents")
+        p = self.dumpWithPreobjects(None, orig, dis=False)
+        obj = self.pickler.loads(p)[-1]
+        self.assertIsNot(obj, orig)
+        self.assertIs(type(obj), type(orig))
+        self.assertRaisesRegexp(ValueError, r"Cell is empty", getattr, obj, "cell_contents")
+
+    #
     # Tests for pickling trace back and frame objects
     #
     def testTypeFrame(self):

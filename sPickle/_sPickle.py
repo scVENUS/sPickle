@@ -240,6 +240,11 @@ def create_closed_socketpair_socket():
 def create_cell(obj):
     return (lambda: obj).func_closure[0]
 
+
+def create_empty_cell():
+    return (lambda: local_var).__closure__[0]
+    local_var = None
+
 if True:
     #
     # Recreate the functions with __GLOBALS_DICT as their global
@@ -270,6 +275,7 @@ if True:
                                              __GLOBALS_DICT,
                                             'create_closed_socketpair_socket_')
     create_cell = __func(create_cell.func_code, __GLOBALS_DICT, 'create_cell_')
+    create_empty_cell = __func(create_empty_cell.func_code, __GLOBALS_DICT, 'create_empty_cell_')
     del __func
     del __GLOBALS_DICT
 
@@ -1183,7 +1189,12 @@ class Pickler(pickle.Pickler):
                                           obj.co_cellvars), obj=obj)
 
     def saveCell(self, obj):
-        self.save_reduce(create_cell, (obj.cell_contents,), obj=obj)
+        try:
+            cell_contents = obj.cell_contents
+        except ValueError:
+            # an empty cell
+            return self.save_reduce(create_empty_cell, (), obj=obj)
+        return self.save_reduce(create_cell, (cell_contents,), obj=obj)
 
     def saveClass(self, obj):
         # create a class in 2 steps
