@@ -1070,6 +1070,20 @@ class Pickler(pickle.Pickler):
             save(state)
             write(pickle.BUILD)
 
+    def __check_and_save_method_candidate(self, candidate, im_class, im_func, name):
+        if candidate is im_func:
+            args = (im_class, name)
+            with self.rollback_on_exception():
+                self.save_reduce(getattr, args, obj=im_func)
+                return True
+        elif isinstance(candidate, types.MethodType) and candidate.im_func is im_func:
+            with self.rollback_on_exception():
+                args = (im_class, name)
+                args = (SPickleTools.reducer(getattr, args), 'im_func')
+                self.save_reduce(getattr, args, obj=im_func)
+                return True
+        return False
+
     def saveInstanceMethod(self, obj):
         memo = self.memo
         objId = id(obj)
@@ -1101,22 +1115,29 @@ class Pickler(pickle.Pickler):
             # try to get the function from the class.
             from_class = False
             if im_class is not None:
-                try:
-                    m = getattr(im_class, im_func.__name__)
-                except Exception:
-                    pass
+                name = im_func.__name__
+                is_private = len(name) >= 3 and name.startswith('__') and not name.endswith('__')
+                if is_private:
+                    # a private method. We have to find it's class
+                    for cls in inspect.getmro(im_class):
+                        if from_class:
+                            break
+                        for name_candidate in ("_{0}{1}".format(cls.__name__, name), name):
+                            try:
+                                m = getattr(cls, name_candidate)
+                            except Exception:
+                                pass
+                            else:
+                                from_class = self.__check_and_save_method_candidate(m, im_class, im_func, name_candidate)
+                                if from_class:
+                                    break
                 else:
-                    if m is im_func:
-                        args = (im_class, im_func.__name__)
-                        with self.rollback_on_exception():
-                            self.save_reduce(getattr, args, obj=im_func)
-                            from_class = True
-                    elif isinstance(m, types.MethodType) and m.im_func is im_func:
-                        with self.rollback_on_exception():
-                            args = (im_class, im_func.__name__)
-                            args = (SPickleTools.reducer(getattr, args), 'im_func')
-                            self.save_reduce(getattr, args, obj=im_func)
-                            from_class = True
+                    try:
+                        m = getattr(im_class, name)
+                    except Exception:
+                        pass
+                    else:
+                        from_class = self.__check_and_save_method_candidate(m, im_class, im_func, name)
             if not from_class:
                 self.save(im_func)
             self.write(pickle.POP)

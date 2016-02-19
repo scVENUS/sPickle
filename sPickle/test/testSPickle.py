@@ -164,9 +164,23 @@ class PlainClass(object):
     def isOk(self):
         return self.state == "OK"
 
+    def __private(self):
+        return self.state == "OK"
+
+    def __special__(self):
+        return self.state == "OK"
+
+
+# Add a method named PlainClass.__private. This is different from PlainClass._PlainClass__private
+def __private(self):
+    return self.state == "OK"
+setattr(PlainClass, "__private", __private)
+del __private
+
 
 class PlainSubClass(PlainClass):
-    pass
+    def __private(self):
+        return self.state == "OK"
 
 
 class PlainClassicClass:
@@ -174,6 +188,14 @@ class PlainClassicClass:
         self.state = state
 
     def isOk(self):
+        return self.state == "OK"
+
+    def __private(self):
+        return self.state == "OK"
+
+
+class PlainClassicSubClass(PlainClassicClass):
+    def __private(self):
         return self.state == "OK"
 
 
@@ -1031,8 +1053,8 @@ class PicklingTest(TestCase):
         self.assertIs(obj.im_class, orig.im_class)
         self.assertIsNone(obj.im_self)
 
-    def boundInstancemethodTest(self, cls, function_by_value=False):
-        orig = cls('OK').isOk
+    def boundInstancemethodTest(self, cls, function_by_value=False, method_name='isOk'):
+        orig = getattr(cls('OK'), method_name)
         self.assertIsInstance(orig, types.MethodType)
         self.assertIsNotNone(orig.im_self)
 
@@ -1058,20 +1080,36 @@ class PicklingTest(TestCase):
 
     def testBoundInstancemethod1(self):
         self.boundInstancemethodTest(PlainClass)
+        self.boundInstancemethodTest(PlainClass, method_name="_PlainClass__private")
+        self.boundInstancemethodTest(PlainClass, method_name="__private")
+        self.boundInstancemethodTest(PlainClass, method_name="__special__")
 
     def testUnboundInstancemethod2(self):
         self.unboundInstancemethodTest(PlainSubClass)
 
     def testBoundInstancemethod2(self):
         self.boundInstancemethodTest(PlainSubClass)
+        self.boundInstancemethodTest(PlainSubClass, method_name="_PlainClass__private")
+        self.boundInstancemethodTest(PlainSubClass, method_name="_PlainSubClass__private")
+        self.boundInstancemethodTest(PlainSubClass, method_name="__private")
+        self.boundInstancemethodTest(PlainSubClass, method_name="__special__")
 
     def testUnboundInstancemethod3(self):
         self.unboundInstancemethodTest(PlainClassicClass)
 
     def testBoundInstancemethod3(self):
         self.boundInstancemethodTest(PlainClassicClass)
+        self.boundInstancemethodTest(PlainClassicClass, method_name="_PlainClassicClass__private")
+
+    def testUnboundInstancemethod4(self):
+        self.unboundInstancemethodTest(PlainClassicSubClass)
 
     def testBoundInstancemethod4(self):
+        self.boundInstancemethodTest(PlainClassicSubClass)
+        self.boundInstancemethodTest(PlainClassicSubClass, method_name="_PlainClassicClass__private")
+        self.boundInstancemethodTest(PlainClassicSubClass, method_name="_PlainClassicSubClass__private")
+
+    def testBoundInstancemethod5(self):
         class C(object):
             def __init__(self, arg):
                 pass
@@ -1080,7 +1118,7 @@ class PicklingTest(TestCase):
                 return True
         self.boundInstancemethodTest(C, function_by_value=True)
 
-    def testBoundInstancemethod5(self):
+    def testBoundInstancemethod6(self):
         class C(object):
             def __init__(self, arg):
                 pass
