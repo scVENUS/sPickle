@@ -41,6 +41,9 @@ import operator
 import weakref
 import abc
 
+from .. import _sPickle
+from . import wf_module
+
 try:
     from stackless import _wrap
     del _wrap
@@ -62,9 +65,6 @@ except ImportError:
     RPYC_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
-
-from .. import _sPickle
-from . import wf_module
 
 
 class PEP302ImportDetector(object):
@@ -568,7 +568,7 @@ class PicklingTest(TestCase):
             p = self.dumpWithPreobjects(None, orig, orig.__dict__, dis=dis)
             obj, d = self.pickler.loads(p)[-1]
         self.assertTrue(type(obj)is type(orig))
-        self.assertTrue(type(obj.__dict__) is type(orig.__dict__))
+        self.assertTrue(type(obj.__dict__) is type(orig.__dict__))  # @IgnorePep8
         self.assertEquals(set(obj.__dict__.keys()), set(orig.__dict__.keys()))
         self.assertTrue(obj.__dict__ is d)
         self.assertTrue(obj.isOk() is True)
@@ -1005,7 +1005,7 @@ class PicklingTest(TestCase):
         self.assertEqual(obj.__name__, orig.__name__)
         self.assertEqual(obj.__doc__, orig.__doc__)
         if hasattr(orig, "func_globals"):
-            self.assertTrue(type(obj.func_globals) is type(orig.func_globals))
+            self.assertTrue(type(obj.func_globals) is type(orig.func_globals))  # @IgnorePep8
         if hasattr(orig, "func_code"):
             self.assertFalse(obj.func_code is orig.func_code)
             self.assertEquals(obj.func_code, orig.func_code)
@@ -1015,7 +1015,7 @@ class PicklingTest(TestCase):
     def testTypeInstancemethod(self):
         p = self.pickler.dumps(types.MethodType)
         obj = self.pickler.loads(p)
-        self.assertTrue(obj is types.MethodType)
+        self.assertTrue(obj is types.MethodType)  # @IgnorePep8
 
     def unboundInstancemethodTest(self, cls):
         orig = cls.isOk
@@ -1093,7 +1093,7 @@ class PicklingTest(TestCase):
     def testTypeCode(self):
         p = self.pickler.dumps(types.CodeType)
         obj = self.pickler.loads(p)
-        self.assertTrue(obj is types.CodeType)
+        self.assertTrue(obj is types.CodeType)  # @IgnorePep8
 
     def testTypeCell(self):
         cellType = type((lambda: self).func_closure[0])
@@ -1285,7 +1285,7 @@ class PicklingTest(TestCase):
     def testTypeClass(self):
         p = self.pickler.dumps(types.ClassType)
         obj = self.pickler.loads(p)
-        self.assertTrue(obj is types.ClassType)
+        self.assertTrue(obj is types.ClassType)  # @IgnorePep8
 
     def testThreadLock(self):
         lock = thread.allocate_lock()
@@ -1503,7 +1503,8 @@ class PicklingTest(TestCase):
         self.assertIs(obj, orig)
 
     def testOperatorAttrgetter(self):
-        target = lambda: None
+        def target():
+            return None
         target.a = 1
         target.b = lambda: None
         target.b.c = 2

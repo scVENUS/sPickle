@@ -953,7 +953,7 @@ class Pickler(pickle.Pickler):
             try:
                 # test for the default result. If the function has a correct __reduce__ method,
                 # it will probably return something different
-                rvIsBroken = rv[0] is copy_reg.__newobj__ and 1 == len(rv[1]) and rv[1][0] is types.FunctionType
+                rvIsBroken = rv[0] is copy_reg.__newobj__ and 1 == len(rv[1]) and rv[1][0] is types.FunctionType  # @IgnorePep8
             except Exception:
                 rvIsBroken = False
             if rvIsBroken:
@@ -1612,7 +1612,7 @@ class Pickler(pickle.Pickler):
         else:
             rv = reduce_(self.proto)
 
-        if type(rv) is types.StringType:
+        if type(rv) is types.StringType:  # @IgnorePep8
             self.save_global(obj, rv)
             return
 
