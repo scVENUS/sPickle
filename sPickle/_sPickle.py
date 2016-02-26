@@ -301,8 +301,7 @@ class ObjectAlreadyPickledError(pickle.PickleError):
 
 
 class UnpicklingWillFailError(pickle.PicklingError):
-
-    """This object can be pickled, but unpickling will probably fail.
+    """This error indicates, that an object can be pickled, but unpickling will probably fail.
 
     This usually caused by an incomplete implementation of the pickling
     protocol or by a hostile __getattr__ or __getattribute__ method.
@@ -358,13 +357,14 @@ class Pickler(pickle.Pickler):
         if at least one of the following conditions is true. Otherwise it
         gets pickled by reference:
 
-        * The module object is contained in serializeableModules.
+        * The module has a global variable named *__module_must_be_pickled__* and
+          the value of this variable is true.
+        * The module object is contained in *serializeableModules*.
         * The the name of the module starts with a string contained
-          in serializeableModules.
-        * The module has an attribute `__file__` and module contains
-          a string, that is a substring of `__file__` after applying
-          a path and case normalization as appropriate for the
-          current system.
+          in *serializeableModules*.
+        * The module has the attribute `__file__` and *serializeableModules*
+          contains a string, that is a substring of `__file__` after applying
+          path and case normalization as appropriate for the current system.
 
         The optional argument *logger* must be an instance of class
         :class:`logging.Logger`. If given, it is used instead of default
@@ -1804,8 +1804,17 @@ class Pickler(pickle.Pickler):
 
 
 class RecursionDetectedError(PicklingError):
+    """Raised by :class:`FailSavePickler` on infinite recursions
 
+    """
     def __init__(self, msg, oid, level):
+        """
+        :param msg: the message
+        :type msg: str
+        :param oid: the :func:`id` value of the object, that caused the recursion.
+        :type oid: int
+        :param level: intentionally undocumented
+        """
         super(RecursionDetectedError, self).__init__(msg, oid, level)
         self.oid = oid
         self.level = int(level)

@@ -78,6 +78,13 @@ No further plans currently
 Changes
 =======
 
+Version 0.1.x
+-------------
+
+2016-02-26
+- Removed 'StacklessTaskletReturnValueException' from sPickle.__all__
+- Documented constants and exceptions and added them to sPickle.__all__
+
 Version 0.1.9
 -------------
 
