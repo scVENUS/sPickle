@@ -75,8 +75,8 @@ Plan
 ====
 No further plans currently
 
-Changes
-=======
+
+### Changes ###
 
 Version 0.1.x
 -------------

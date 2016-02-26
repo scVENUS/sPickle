@@ -19,3 +19,11 @@ Indices and tables
 * :ref:`modindex`
 * :ref:`search`
 
+Changes
+=======
+
+This is just a short summary. The `Git log <https://github.com/akruis/sPickle/commits/master>`_ is the truth.
+
+.. literalinclude:: README.txt
+   :start-after: ### Changes ###
+   :encoding: utf-8
