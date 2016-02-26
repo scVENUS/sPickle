@@ -165,6 +165,9 @@ class PlainClass(object):
     def isOk(self):
         return self.state == "OK"
 
+    def isOk2(self):
+        return self.state == "OK"
+
     def __private(self):
         return self.state == "OK"
 
@@ -181,6 +184,9 @@ del __private
 
 class PlainSubClass(PlainClass):
     def __private(self):
+        return self.state == "OK"
+
+    def isOk2(self):
         return self.state == "OK"
 
 
@@ -1054,8 +1060,9 @@ class PicklingTest(TestCase):
         self.assertIs(obj.im_class, orig.im_class)
         self.assertIsNone(obj.im_self)
 
-    def boundInstancemethodTest(self, cls, function_by_value=False, method_name='isOk'):
-        orig = getattr(cls('OK'), method_name)
+    def boundInstancemethodTest(self, cls, function_by_value=False, method_name='isOk', orig=None):
+        if orig is None:
+            orig = getattr(cls('OK'), method_name)
         self.assertIsInstance(orig, types.MethodType)
         self.assertIsNotNone(orig.im_self)
 
@@ -1125,6 +1132,13 @@ class PicklingTest(TestCase):
                 pass
             isOk = PlainClass('OK').isOk
         self.boundInstancemethodTest(C)
+
+    def testBoundInstancemethod7(self):
+        # test pickling of a super method
+        o = PlainSubClass('OK')
+        m = super(PlainSubClass, o).isOk2
+        self.assertIs(m.im_func, PlainClass.isOk2.im_func)
+        self.boundInstancemethodTest(PlainSubClass, method_name="isOk2", orig=m)
 
     #
     # Tests for function creation

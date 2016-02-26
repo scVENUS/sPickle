@@ -84,6 +84,9 @@ Version 0.1.x
 2016-02-26
 - Removed 'StacklessTaskletReturnValueException' from sPickle.__all__
 - Documented constants and exceptions and added them to sPickle.__all__
+- Previously a method of the super class was pickled by value, if the
+  subclass overloaded the method. Now the pickler performs a correct
+  mro-search to find the implementing class of a method.
 
 Version 0.1.9
 -------------

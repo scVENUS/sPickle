@@ -1128,16 +1128,20 @@ class Pickler(pickle.Pickler):
                             except Exception:
                                 pass
                             else:
-                                from_class = self.__check_and_save_method_candidate(m, im_class, im_func, name_candidate)
+                                from_class = self.__check_and_save_method_candidate(m, cls, im_func, name_candidate)
                                 if from_class:
                                     break
                 else:
-                    try:
-                        m = getattr(im_class, name)
-                    except Exception:
-                        pass
-                    else:
-                        from_class = self.__check_and_save_method_candidate(m, im_class, im_func, name)
+                    # method. We have to find it's class
+                    for cls in inspect.getmro(im_class):
+                        try:
+                            m = getattr(cls, name)
+                        except Exception:
+                            pass
+                        else:
+                            from_class = self.__check_and_save_method_candidate(m, cls, im_func, name)
+                            if from_class:
+                                break
             if not from_class:
                 self.save(im_func)
             self.write(pickle.POP)
