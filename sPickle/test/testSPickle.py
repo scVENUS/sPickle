@@ -54,7 +54,8 @@ else:
 
 try:
     import gtk
-except ImportError:
+except (ImportError, Warning):
+    # import gtk raises gtk.GtkWarning on Linux/UNIX, if it fails to open the DISPLAY
     gtk = None
 
 try:
