@@ -150,7 +150,7 @@ def create_module(cls, name, doc=None):
 def save_modules_entry(name):
     """returns a module from sys.modules
 
-    If sys.modules has no emtry for name, an
+    If sys.modules has no entry for name, an
     empty tuple is returned as a flag object. (We
     can't use None, because None is a possible value
     in sys.modules.)
@@ -367,7 +367,7 @@ class Pickler(pickle.Pickler):
           current system.
 
         The optional argument *logger* must be an instance of class
-        :class:`logging.Logger`. If given, it is used instead of default
+        :class:`logging.Logger`. If given, it is used instead of the default
         logger.
 
         Experimental feature: the optional argument *mangleModuleName*
@@ -703,18 +703,18 @@ class Pickler(pickle.Pickler):
         """
         An auxiliary object, that can be used to replace arbitrary objects in the pickle
 
-        The basic idea is simple: if you need to replace an object with a different on,
+        The basic idea is simple: if you need to replace an object with a different one,
         you save the replacement object and then you make the memo entry for the
         original object point to the replacement object.
 
         However the details are a little bit involved: the original object must not
         be in the memo, when you save the replacement object. Otherwise you get inconsistent
-        results unpickling. Therefore we need to backtrack, if the original object is already
+        results during unpickling. Therefore we need to backtrack, if the original object is already
         in the memo. In order to be able to use the existing backtracking mechanism,
         we need a holder object for the original and the replacement.
         :class:`_ObjReplacementContainer` is such a holder object.
 
-        About the memo entry for the original: in order that we are able to recognize
+        About the memo entry for the original: to be able to recognise
         a manipulated entry, we set the second element of the memo value to the
         pair ``(original, replacement)``.
         """
@@ -890,7 +890,7 @@ class Pickler(pickle.Pickler):
             x = memo.get(id(obj))
             if x is not None:
                 return self.write(self.get(x[0], pack))
-            # stange: obj is not contained in the dictionary of its module
+            # strange: obj is not contained in the dictionary of its module
             # probably the type of mod is a strange subclass of module
             return self.save_reduce(getattr, (mod, name), obj=obj)
 
@@ -953,7 +953,7 @@ class Pickler(pickle.Pickler):
             try:
                 # test for the default result. If the function has a correct __reduce__ method,
                 # it will probably return something different
-                rvIsBroken = rv[0] is copy_reg.__newobj__ and 1 == len(rv[1]) and rv[1][0] is types.FunctionType
+                rvIsBroken = rv[0] is copy_reg.__newobj__ and 1 == len(rv[1]) and rv[1][0] is types.FunctionType  # @IgnorePep8
             except Exception:
                 rvIsBroken = False
             if rvIsBroken:
@@ -1612,7 +1612,7 @@ class Pickler(pickle.Pickler):
         else:
             rv = reduce_(self.proto)
 
-        if type(rv) is types.StringType:
+        if type(rv) is types.StringType:  # @IgnorePep8
             self.save_global(obj, rv)
             return
 
