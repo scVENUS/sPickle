@@ -478,6 +478,82 @@ class Pickler(pickle.Pickler):
         # Used for class creation
         self.delayedClassSetAttrList = []
 
+        # used to pickle special objects. Holds callables with the signature (pickler, obj).
+        # The key is the object id(), because the objects might not be hashable
+        self.object_dispatch = {
+            id(WRAPPER_DESCRIPTOR_TYPE): self._save_object_wrapper_descriptor_type.__func__,
+            id(METHOD_DESCRIPTOR_TYPE): self._save_object_method_descriptor_type.__func__,
+            id(METHOD_WRAPPER_TYPE): self._save_object_method_wrapper_type.__func__,
+            id(LISTITERATOR_TYPE): self._save_object_listiterator_type.__func__,
+            id(TUPLEITERATOR_TYPE): self._save_object_tupleiterator_type.__func__,
+            id(RANGEITERATOR_TYPE): self._save_object_rangeiterator_type.__func__,
+            id(SETITERATOR_TYPE): self._save_object_setiterator_type.__func__,
+            id(EMPTY_LIST_ITERATOR): self._save_object_empty_list_iterator.__func__,
+            id(EMPTY_TUPLE_ITERATOR): self._save_object_empty_tuple_iterator.__func__,
+            id(EMPTY_RANGE_ITERATOR): self._save_object_empty_range_iterator.__func__,
+            id(EMPTY_SET_ITERATOR): self._save_object_empty_set_iterator.__func__,
+            id(CSTRINGIO_INPUT_TYPE): self._save_object_cstringio_input_type.__func__,
+            id(CSTRINGIO_OUTPUT_TYPE): self._save_object_cstringio_output_type.__func__,
+            id(CELL_TYPE): self._save_object_cell_type.__func__,
+            id(weakref.ReferenceType): self._save_object_weakref_reference_type.__func__,
+            id(weakref.ProxyType): self._save_object_weakref_proxy_type.__func__,
+            id(weakref.CallableProxyType): self._save_object_weakref_callableproxy_type.__func__,
+        }
+
+    def _save_object_wrapper_descriptor_type(self, obj):
+        return self.save_reduce(type, (SPickleTools.reducer(getattr, (object, "__getattribute__")), ), obj=obj)
+
+    def _save_object_method_descriptor_type(self, obj):
+        return self.save_reduce(type, (SPickleTools.reducer(getattr, (object, "__format__")), ), obj=obj)
+
+    def _save_object_method_wrapper_type(self, obj):
+        return self.save_reduce(type, (SPickleTools.reducer(getattr, (1, "__add__")), ), obj=obj)
+
+    def _save_object_listiterator_type(self, obj):
+        return self.save_reduce(type, (EMPTY_LIST_ITERATOR,), obj=obj)
+
+    def _save_object_tupleiterator_type(self, obj):
+        return self.save_reduce(type, (EMPTY_TUPLE_ITERATOR,), obj=obj)
+
+    def _save_object_rangeiterator_type(self, obj):
+        return self.save_reduce(type, (EMPTY_RANGE_ITERATOR,), obj=obj)
+
+    def _save_object_setiterator_type(self, obj):
+        return self.save_reduce(type, (EMPTY_SET_ITERATOR,), obj=obj)
+
+    def _save_object_empty_list_iterator(self, obj):
+        return self.save_reduce(iter, ([],), obj=obj)
+
+    def _save_object_empty_tuple_iterator(self, obj):
+        return self.save_reduce(iter, ((),), obj=obj)
+
+    def _save_object_empty_range_iterator(self, obj):
+        return self.save_reduce(iter, (xrange(0),), obj=obj)
+
+    def _save_object_empty_set_iterator(self, obj):
+        return self.save_reduce(iter, (set(),), obj=obj)
+
+    def _save_object_cstringio_input_type(self, obj):
+        return self.save_global(obj, "InputType")
+
+    def _save_object_cstringio_output_type(self, obj):
+        return self.save_global(obj, "OutputType")
+
+    def _save_object_cell_type(self, obj):
+        return self.save_reduce(type, (NONE_CELL,), obj=obj)
+
+    def _save_object_weakref_reference_type(self, obj):
+        self.write(pickle.GLOBAL + b'weakref\nReferenceType\n')
+        self.memoize(obj)
+
+    def _save_object_weakref_proxy_type(self, obj):
+        self.write(pickle.GLOBAL + b'weakref\nProxyType\n')
+        self.memoize(obj)
+
+    def _save_object_weakref_callableproxy_type(self, obj):
+        self.write(pickle.GLOBAL + b'weakref\nCallableProxyType\n')
+        self.memoize(obj)
+
     def mustSerialize(self, obj):
         """test, if a module must be serialised"""
 
@@ -577,11 +653,20 @@ class Pickler(pickle.Pickler):
             return
 
         # Check the memo
-        x = self.memo.get(id(obj))
+        obj_id = id(obj)
+        x = self.memo.get(obj_id)
         if x:
             self.write(self.get(x[0]))
             return
 
+        # singleton objects (built-in types, empty iterators, ...)
+        x = self.object_dispatch.get(obj_id)
+        if x is not None:
+            x(self, obj)
+            return
+
+        # backtracking for objects with a attribute named "__dict__"
+        # These objects must be pickled prior to their dictionaries
         try:
             objDict = obj.__dict__
         except Exception:
@@ -594,11 +679,15 @@ class Pickler(pickle.Pickler):
                     raise ObjectAlreadyPickledError("__dict__ already pickled (memo %s) for %r" % (x[0], obj), obj, dictId)
 
         # special cases
+
+        # Modules and subclasses
         if isinstance(obj, types.ModuleType):
             if self.saveModule(obj):
                 return
 
-        super_save = pickle.Pickler.save
+        super_save = pickle.Pickler.save  # old style class
+
+        # Frames need special code to handle the trace function
         if isinstance(obj, types.FrameType):
             trace_func = obj.f_trace
             if trace_func is not None:
@@ -608,47 +697,6 @@ class Pickler(pickle.Pickler):
             finally:
                 if trace_func is not None:
                     obj.f_trace = trace_func
-
-        if obj is WRAPPER_DESCRIPTOR_TYPE:
-            return self.save_reduce(type, (SPickleTools.reducer(getattr, (object, "__getattribute__")), ), obj=obj)
-        if obj is METHOD_DESCRIPTOR_TYPE:
-            return self.save_reduce(type, (SPickleTools.reducer(getattr, (object, "__format__")), ), obj=obj)
-        if obj is METHOD_WRAPPER_TYPE:
-            return self.save_reduce(type, (SPickleTools.reducer(getattr, (1, "__add__")), ), obj=obj)
-        if obj is LISTITERATOR_TYPE:
-            return self.save_reduce(type, (EMPTY_LIST_ITERATOR,), obj=obj)
-        if obj is TUPLEITERATOR_TYPE:
-            return self.save_reduce(type, (EMPTY_TUPLE_ITERATOR,), obj=obj)
-        if obj is RANGEITERATOR_TYPE:
-            return self.save_reduce(type, (EMPTY_RANGE_ITERATOR,), obj=obj)
-        if obj is SETITERATOR_TYPE:
-            return self.save_reduce(type, (EMPTY_SET_ITERATOR,), obj=obj)
-        if obj is EMPTY_LIST_ITERATOR:
-            return self.save_reduce(iter, ([],), obj=obj)
-        if obj is EMPTY_TUPLE_ITERATOR:
-            return self.save_reduce(iter, ((),), obj=obj)
-        if obj is EMPTY_RANGE_ITERATOR:
-            return self.save_reduce(iter, (xrange(0),), obj=obj)
-        if obj is EMPTY_SET_ITERATOR:
-            return self.save_reduce(iter, (set(),), obj=obj)
-        if obj is CSTRINGIO_INPUT_TYPE:
-            return self.save_global(obj, "InputType")
-        if obj is CSTRINGIO_OUTPUT_TYPE:
-            return self.save_global(obj, "OutputType")
-        if obj is CELL_TYPE:
-            return self.save_reduce(type, (NONE_CELL,), obj=obj)
-        if obj is weakref.ReferenceType:
-            self.write(pickle.GLOBAL + b'weakref\nReferenceType\n')
-            self.memoize(obj)
-            return
-        if obj is weakref.ProxyType:
-            self.write(pickle.GLOBAL + b'weakref\nProxyType\n')
-            self.memoize(obj)
-            return
-        if obj is weakref.CallableProxyType:
-            self.write(pickle.GLOBAL + b'weakref\nCallableProxyType\n')
-            self.memoize(obj)
-            return
 
         # handle __new__ and similar methods of built-in types
         if (isinstance(obj, type(object.__new__)) and
