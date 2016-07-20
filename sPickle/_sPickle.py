@@ -1,7 +1,7 @@
 #
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2011 by science+computing ag
+# Copyright (c) 2016 by science+computing ag
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -301,8 +301,7 @@ class ObjectAlreadyPickledError(pickle.PickleError):
 
 
 class UnpicklingWillFailError(pickle.PicklingError):
-
-    """This object can be pickled, but unpickling will probably fail.
+    """This error indicates, that an object can be pickled, but unpickling will probably fail.
 
     This usually caused by an incomplete implementation of the pickling
     protocol or by a hostile __getattr__ or __getattribute__ method.
@@ -358,13 +357,14 @@ class Pickler(pickle.Pickler):
         if at least one of the following conditions is true. Otherwise it
         gets pickled by reference:
 
-        * The module object is contained in serializeableModules.
+        * The module has a global variable named *__module_must_be_pickled__* and
+          the value of this variable is true.
+        * The module object is contained in *serializeableModules*.
         * The the name of the module starts with a string contained
-          in serializeableModules.
-        * The module has an attribute `__file__` and module contains
-          a string, that is a substring of `__file__` after applying
-          a path and case normalization as appropriate for the
-          current system.
+          in *serializeableModules*.
+        * The module has the attribute `__file__` and *serializeableModules*
+          contains a string, that is a substring of `__file__` after applying
+          path and case normalization as appropriate for the current system.
 
         The optional argument *logger* must be an instance of class
         :class:`logging.Logger`. If given, it is used instead of the default
@@ -1118,6 +1118,20 @@ class Pickler(pickle.Pickler):
             save(state)
             write(pickle.BUILD)
 
+    def __check_and_save_method_candidate(self, candidate, im_class, im_func, name):
+        if candidate is im_func:
+            args = (im_class, name)
+            with self.rollback_on_exception():
+                self.save_reduce(getattr, args, obj=im_func)
+                return True
+        elif isinstance(candidate, types.MethodType) and candidate.im_func is im_func:
+            with self.rollback_on_exception():
+                args = (im_class, name)
+                args = (SPickleTools.reducer(getattr, args), 'im_func')
+                self.save_reduce(getattr, args, obj=im_func)
+                return True
+        return False
+
     def saveInstanceMethod(self, obj):
         memo = self.memo
         objId = id(obj)
@@ -1149,22 +1163,33 @@ class Pickler(pickle.Pickler):
             # try to get the function from the class.
             from_class = False
             if im_class is not None:
-                try:
-                    m = getattr(im_class, im_func.__name__)
-                except Exception:
-                    pass
+                name = im_func.__name__
+                is_private = len(name) >= 3 and name.startswith('__') and not name.endswith('__')
+                if is_private:
+                    # a private method. We have to find it's class
+                    for cls in inspect.getmro(im_class):
+                        if from_class:
+                            break
+                        for name_candidate in ("_{0}{1}".format(cls.__name__, name), name):
+                            try:
+                                m = getattr(cls, name_candidate)
+                            except Exception:
+                                pass
+                            else:
+                                from_class = self.__check_and_save_method_candidate(m, cls, im_func, name_candidate)
+                                if from_class:
+                                    break
                 else:
-                    if m is im_func:
-                        args = (im_class, im_func.__name__)
-                        with self.rollback_on_exception():
-                            self.save_reduce(getattr, args, obj=im_func)
-                            from_class = True
-                    elif isinstance(m, types.MethodType) and m.im_func is im_func:
-                        with self.rollback_on_exception():
-                            args = (im_class, im_func.__name__)
-                            args = (SPickleTools.reducer(getattr, args), 'im_func')
-                            self.save_reduce(getattr, args, obj=im_func)
-                            from_class = True
+                    # method. We have to find it's class
+                    for cls in inspect.getmro(im_class):
+                        try:
+                            m = getattr(cls, name)
+                        except Exception:
+                            pass
+                        else:
+                            from_class = self.__check_and_save_method_candidate(m, cls, im_func, name)
+                            if from_class:
+                                break
             if not from_class:
                 self.save(im_func)
             self.write(pickle.POP)
@@ -1831,8 +1856,17 @@ class Pickler(pickle.Pickler):
 
 
 class RecursionDetectedError(PicklingError):
+    """Raised by :class:`FailSavePickler` on infinite recursions
 
+    """
     def __init__(self, msg, oid, level):
+        """
+        :param msg: the message
+        :type msg: str
+        :param oid: the :func:`id` value of the object, that caused the recursion.
+        :type oid: int
+        :param level: intentionally undocumented
+        """
         super(RecursionDetectedError, self).__init__(msg, oid, level)
         self.oid = oid
         self.level = int(level)

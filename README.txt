@@ -3,25 +3,25 @@ About sPickle
 
 sPickle is an advanced (and experimental) Pickler for Python. The code
 was developed as part of a commercial project and released as free
-software under the Apache 2.0 License by science + computing ag. The 
+software under the Apache 2.0 License by science + computing ag. The
 software is copyrighted by science + computing ag.
 
-Why did we decide to make sPickle free software? We utilise Python and 
+Why did we decide to make sPickle free software? We utilise Python and
 other open source products a lot. Therefore we think it is just fair
-to release enhancements back to the public. 
+to release enhancements back to the public.
 
 
 Requirements
 ------------
 
 * Python 2.7
-* RPyC is used in the unit tests; the test is skipped, if 
+* RPyC is used in the unit tests; the test is skipped, if
   import rpyc fails.
 
-(Sorry, Python 3 support is still in its beginnings. 
-See https://github.com/akruis/sPickle/tree/py3port. I'll happily accept 
-patches.)  
- 
+(Sorry, Python 3 support is still in its beginnings.
+See https://github.com/akruis/sPickle/tree/py3port. I'll happily accept
+patches.)
+
 
 Installation
 ------------
@@ -33,8 +33,8 @@ git clone git://github.com/akruis/sPickle.git
 Using sPickle
 -------------
 
-The sPickle module provides a class sPickle.Pickler. This class is very 
-similar to the conventional pickle.Pickler class and can be used as a 
+The sPickle module provides a class sPickle.Pickler. This class is very
+similar to the conventional pickle.Pickler class and can be used as a
 drop in replacement. Instead of:
 
   from pickle import Pickler
@@ -43,7 +43,7 @@ drop in replacement. Instead of:
   pickler = Pickler(file, -1)
   pickler.dump(object_to_be_serialised)
   file.close()
-  
+
 you write:
 
   from sPickle import Pickler
@@ -53,17 +53,17 @@ you write:
   pickler.dump(object_to_be_serialised)
   file.close()
 
-You see, just 2 characters difference. Of course, there are more 
-differences under the hood. 
+You see, just 2 characters difference. Of course, there are more
+differences under the hood.
 
 * sPickle supports serialisation of more types than the conventional Pickler.
-  In fact, most types can be pickled now, if serialisation makes any sense 
+  In fact, most types can be pickled now, if serialisation makes any sense
   for the particular type at all. But be warned: unpickling of some types
   requires the same Python version.
- 
+
 * A sPickle Pickler has a list-typed attribute "serializeableModules". You can
-  use this attribute to determine which modules are to be pickled. For 
-  details, read the comments in the source code and look at the examples.  
+  use this attribute to determine which modules are to be pickled. For
+  details, read the comments in the source code and look at the examples.
 
 Support
 =======
@@ -75,8 +75,25 @@ Plan
 ====
 No further plans currently
 
-Changes
-=======
+
+### Changes ###
+
+Version 0.1.10
+--------------
+
+2016-02-26
+- Removed 'StacklessTaskletReturnValueException' from sPickle.__all__
+- Documented constants and exceptions and added them to sPickle.__all__
+- Previously a method of the super class was pickled by value, if the
+  subclass overloaded the method. Now the pickler performs a correct
+  mro-search to find the implementing class of a method.
+
+Version 0.1.9
+-------------
+
+2016-02-19
+- Fixed pickling of private methods.
+- PEP 8 fixes.
 
 Version 0.1.8
 -------------
@@ -96,7 +113,7 @@ Version 0.1.6
 -------------
 
 2014-05-09
-- Added limited support for pickling objects returned by io.open(). 
+- Added limited support for pickling objects returned by io.open().
 
 Version 0.1.5
 -------------
@@ -123,8 +140,8 @@ Version 0.1.3
 -------------
 2013-11-05
 Improved pickling of abstract base classes. Every abstract base class
-contains two WeakSet attributes _abs_cache and _abc_negative_cache. These 
-sets cache the result of subclass tests. It is advisable not to pickle the 
+contains two WeakSet attributes _abs_cache and _abc_negative_cache. These
+sets cache the result of subclass tests. It is advisable not to pickle the
 content of those caches, because it could contain unpickleable objects.
 This commit changes sPickle to replace _abs_cache and _abc_negative_cache
 by new empty WeakSet instances.
@@ -137,7 +154,7 @@ Adapted to Python 2.7.4 and 2.7.5.
 
 Note: Python 2.7.5 broke unpickling of named tuples pickled by Python 2.7.3 or 2.7.4.
 This is Python bug http://bugs.python.org/issue18015. You can place the file
-http://bugs.python.org/file30338/fix_python_275_issue18015.pth into your 
+http://bugs.python.org/file30338/fix_python_275_issue18015.pth into your
 site-packages directory to monkey patch this bug.
 
 Version 0.1.1
@@ -151,7 +168,7 @@ Version 0.1.0
 2012-10-28
 Support for plain Python
 
-sPickle no longer requires Stackless Python for most of its work. Of course, 
+sPickle no longer requires Stackless Python for most of its work. Of course,
 if you want to pickle tasklets you need Stackless, but for functions, classes
 and most other objects, the normal CPython 2.7 is good enough.
 
@@ -170,14 +187,14 @@ Replaced REDUCE __import__ ... with GLOBAL. Now GLOBAL is used for all imports.
 This change makes it possible to get all imported modules
 using SPickleTools.getImportList().
 
-Enhancements: 
+Enhancements:
 - The new utility method SPickleTools.reducer() simplifies
   the implementation of complex __reduce__ methods.
 - I Added an option to rename the module name of pickled objects.
-- The methods dumps, dumps_with_external_ids and 
+- The methods dumps, dumps_with_external_ids and
   remotemethod of class SPickleTools got new parameters.
 - The class Pickler got a new method analysePicklerStack. It can
-  be used to extract information about the Pickler state from 
+  be used to extract information about the Pickler state from
   the stack or from a traceback.
 
 Version 0.0.8
@@ -186,17 +203,17 @@ Version 0.0.8
 Important bug fix: previous versions failed to pickle some classes.
 Added support for member descriptors, getset descriptors and some
 dictproxy objects.
-    
+
 Added a debugging aid for "id(obj) not in self.memo" assertions.
 Set the environment variable SPICKLE_TRACE_MEMO_ENTRIES to a list of
-space separated memo keys (integer numbers). sPickle will log information 
+space separated memo keys (integer numbers). sPickle will log information
 about the object hierarchy, when it adds a traced memo entry.
 
 Version 0.0.7
 -------------
-Minor fixes. Changed the logging to delay log messages while holding the 
+Minor fixes. Changed the logging to delay log messages while holding the
 import lock. Otherwise you might get a dead-lock.
-Upgrade the Python extensions used by the examples and switched from 
+Upgrade the Python extensions used by the examples and switched from
 Paramiko to ssh.
 
 Version 0.0.6
@@ -217,21 +234,21 @@ version in my talk at EuroPython 2011.
 Version 0.0.3
 -------------
 Renamed example1 to example2 and added a new example1. Example1 now demonstrates
-checkpointing of programs, example2 demonstrates RPyC.  
+checkpointing of programs, example2 demonstrates RPyC.
 Fixed a few problems.
 Use sPickle in flowGuide instead of the original flowGuide pickle code.
 
 
 Version 0.0.2
 -------------
-Reorganised the directory layout, added this README.txt and fixed a few 
-problems. Currently we still use a private source code repository as 
-science + computing, but I plan to switch to github soon. 
+Reorganised the directory layout, added this README.txt and fixed a few
+problems. Currently we still use a private source code repository as
+science + computing, but I plan to switch to github soon.
 
 
 Version 0.0.1
 -------------
-Initial version, released by science + computing ag. This version is more or 
+Initial version, released by science + computing ag. This version is more or
 less a copy of two modules from the flowGuide2 source code. The code works
 for the specific requirements of flowGuide2, but has not been tested outside
-of the flowGuide2 environment. 
+of the flowGuide2 environment.

@@ -1,7 +1,7 @@
 #
 # -*- coding: utf-8 -*-
 #
-#  Copyright (c) 2012 science+computing ag
+#  Copyright (c) 2016 science+computing ag
 #
 #  ALL RIGHTS RESERVED
 #

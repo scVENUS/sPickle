@@ -1,7 +1,7 @@
 #
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2011 by science+computing ag
+# Copyright (c) 2016 by science+computing ag
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -41,6 +41,9 @@ import operator
 import weakref
 import abc
 
+from .. import _sPickle
+from . import wf_module
+
 try:
     from stackless import _wrap
     del _wrap
@@ -51,7 +54,8 @@ else:
 
 try:
     import gtk
-except ImportError:
+except (ImportError, Warning):
+    # import gtk raises gtk.GtkWarning on Linux/UNIX, if it fails to open the DISPLAY
     gtk = None
 
 try:
@@ -62,9 +66,6 @@ except ImportError:
     RPYC_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
-
-from .. import _sPickle
-from . import wf_module
 
 
 class PEP302ImportDetector(object):
@@ -164,9 +165,29 @@ class PlainClass(object):
     def isOk(self):
         return self.state == "OK"
 
+    def isOk2(self):
+        return self.state == "OK"
+
+    def __private(self):
+        return self.state == "OK"
+
+    def __special__(self):
+        return self.state == "OK"
+
+
+# Add a method named PlainClass.__private. This is different from PlainClass._PlainClass__private
+def __private(self):
+    return self.state == "OK"
+setattr(PlainClass, "__private", __private)
+del __private
+
 
 class PlainSubClass(PlainClass):
-    pass
+    def __private(self):
+        return self.state == "OK"
+
+    def isOk2(self):
+        return self.state == "OK"
 
 
 class PlainClassicClass:
@@ -174,6 +195,14 @@ class PlainClassicClass:
         self.state = state
 
     def isOk(self):
+        return self.state == "OK"
+
+    def __private(self):
+        return self.state == "OK"
+
+
+class PlainClassicSubClass(PlainClassicClass):
+    def __private(self):
         return self.state == "OK"
 
 
@@ -568,7 +597,7 @@ class PicklingTest(TestCase):
             p = self.dumpWithPreobjects(None, orig, orig.__dict__, dis=dis)
             obj, d = self.pickler.loads(p)[-1]
         self.assertTrue(type(obj)is type(orig))
-        self.assertTrue(type(obj.__dict__) is type(orig.__dict__))
+        self.assertTrue(type(obj.__dict__) is type(orig.__dict__))  # @IgnorePep8
         self.assertEquals(set(obj.__dict__.keys()), set(orig.__dict__.keys()))
         self.assertTrue(obj.__dict__ is d)
         self.assertTrue(obj.isOk() is True)
@@ -1005,7 +1034,7 @@ class PicklingTest(TestCase):
         self.assertEqual(obj.__name__, orig.__name__)
         self.assertEqual(obj.__doc__, orig.__doc__)
         if hasattr(orig, "func_globals"):
-            self.assertTrue(type(obj.func_globals) is type(orig.func_globals))
+            self.assertTrue(type(obj.func_globals) is type(orig.func_globals))  # @IgnorePep8
         if hasattr(orig, "func_code"):
             self.assertFalse(obj.func_code is orig.func_code)
             self.assertEquals(obj.func_code, orig.func_code)
@@ -1015,7 +1044,7 @@ class PicklingTest(TestCase):
     def testTypeInstancemethod(self):
         p = self.pickler.dumps(types.MethodType)
         obj = self.pickler.loads(p)
-        self.assertTrue(obj is types.MethodType)
+        self.assertTrue(obj is types.MethodType)  # @IgnorePep8
 
     def unboundInstancemethodTest(self, cls):
         orig = cls.isOk
@@ -1031,8 +1060,9 @@ class PicklingTest(TestCase):
         self.assertIs(obj.im_class, orig.im_class)
         self.assertIsNone(obj.im_self)
 
-    def boundInstancemethodTest(self, cls, function_by_value=False):
-        orig = cls('OK').isOk
+    def boundInstancemethodTest(self, cls, function_by_value=False, method_name='isOk', orig=None):
+        if orig is None:
+            orig = getattr(cls('OK'), method_name)
         self.assertIsInstance(orig, types.MethodType)
         self.assertIsNotNone(orig.im_self)
 
@@ -1058,20 +1088,36 @@ class PicklingTest(TestCase):
 
     def testBoundInstancemethod1(self):
         self.boundInstancemethodTest(PlainClass)
+        self.boundInstancemethodTest(PlainClass, method_name="_PlainClass__private")
+        self.boundInstancemethodTest(PlainClass, method_name="__private")
+        self.boundInstancemethodTest(PlainClass, method_name="__special__")
 
     def testUnboundInstancemethod2(self):
         self.unboundInstancemethodTest(PlainSubClass)
 
     def testBoundInstancemethod2(self):
         self.boundInstancemethodTest(PlainSubClass)
+        self.boundInstancemethodTest(PlainSubClass, method_name="_PlainClass__private")
+        self.boundInstancemethodTest(PlainSubClass, method_name="_PlainSubClass__private")
+        self.boundInstancemethodTest(PlainSubClass, method_name="__private")
+        self.boundInstancemethodTest(PlainSubClass, method_name="__special__")
 
     def testUnboundInstancemethod3(self):
         self.unboundInstancemethodTest(PlainClassicClass)
 
     def testBoundInstancemethod3(self):
         self.boundInstancemethodTest(PlainClassicClass)
+        self.boundInstancemethodTest(PlainClassicClass, method_name="_PlainClassicClass__private")
+
+    def testUnboundInstancemethod4(self):
+        self.unboundInstancemethodTest(PlainClassicSubClass)
 
     def testBoundInstancemethod4(self):
+        self.boundInstancemethodTest(PlainClassicSubClass)
+        self.boundInstancemethodTest(PlainClassicSubClass, method_name="_PlainClassicClass__private")
+        self.boundInstancemethodTest(PlainClassicSubClass, method_name="_PlainClassicSubClass__private")
+
+    def testBoundInstancemethod5(self):
         class C(object):
             def __init__(self, arg):
                 pass
@@ -1080,12 +1126,19 @@ class PicklingTest(TestCase):
                 return True
         self.boundInstancemethodTest(C, function_by_value=True)
 
-    def testBoundInstancemethod5(self):
+    def testBoundInstancemethod6(self):
         class C(object):
             def __init__(self, arg):
                 pass
             isOk = PlainClass('OK').isOk
         self.boundInstancemethodTest(C)
+
+    def testBoundInstancemethod7(self):
+        # test pickling of a super method
+        o = PlainSubClass('OK')
+        m = super(PlainSubClass, o).isOk2
+        self.assertIs(m.im_func, PlainClass.isOk2.im_func)
+        self.boundInstancemethodTest(PlainSubClass, method_name="isOk2", orig=m)
 
     #
     # Tests for function creation
@@ -1093,7 +1146,7 @@ class PicklingTest(TestCase):
     def testTypeCode(self):
         p = self.pickler.dumps(types.CodeType)
         obj = self.pickler.loads(p)
-        self.assertTrue(obj is types.CodeType)
+        self.assertTrue(obj is types.CodeType)  # @IgnorePep8
 
     def testTypeCell(self):
         cellType = type((lambda: self).func_closure[0])
@@ -1285,7 +1338,7 @@ class PicklingTest(TestCase):
     def testTypeClass(self):
         p = self.pickler.dumps(types.ClassType)
         obj = self.pickler.loads(p)
-        self.assertTrue(obj is types.ClassType)
+        self.assertTrue(obj is types.ClassType)  # @IgnorePep8
 
     def testThreadLock(self):
         lock = thread.allocate_lock()
@@ -1503,7 +1556,8 @@ class PicklingTest(TestCase):
         self.assertIs(obj, orig)
 
     def testOperatorAttrgetter(self):
-        target = lambda: None
+        def target():
+            return None
         target.a = 1
         target.b = lambda: None
         target.b.c = 2

@@ -1,7 +1,7 @@
 #
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2011 by science+computing ag
+# Copyright (c) 2016 by science+computing ag
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -37,6 +37,11 @@ what could be done.
 .. note::
    The sPickle package is currently requires Python 2.7.
 
+.. data:: MODULE_TO_BE_PICKLED_FLAG_NAME
+   :annotation: = '__module_must_be_pickled__'
+
+   If global (=module level) variable *__module_must_be_pickled__* is true, the module gets pickled by value.
+
 .. autoclass:: Pickler
    :members: analysePicklerStack
 
@@ -46,7 +51,9 @@ what could be done.
 .. autoclass:: FailSavePickler
    :members: get_replacement
 
-.. autoexception:: StacklessTaskletReturnValueException
+.. autoexception:: RecursionDetectedError
+
+.. autoexception:: UnpicklingWillFailError
 
 """
 
@@ -55,13 +62,16 @@ from __future__ import absolute_import, division, print_function
 
 from pickle import *
 del Pickler
-from ._sPickle import (Pickler,  # @Reimport
+from ._sPickle import (Pickler,  # @Reimport @IgnorePep8
                        SPickleTools,
                        MODULE_TO_BE_PICKLED_FLAG_NAME,
                        StacklessTaskletReturnValueException,
                        RESOURCE_TYPES,
-                       FailSavePickler)
-from pickle import __all__
+                       FailSavePickler,
+                       RecursionDetectedError,
+                       UnpicklingWillFailError,
+                       )
+from pickle import __all__  # @IgnorePep8
 
 __all__ = __all__[:]
-__all__.extend(('SPickleTools', 'StacklessTaskletReturnValueException'))
+__all__.extend(('SPickleTools', 'FailSavePickler', 'MODULE_TO_BE_PICKLED_FLAG_NAME', 'RecursionDetectedError', 'UnpicklingWillFailError'))
