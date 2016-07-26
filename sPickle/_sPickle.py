@@ -384,6 +384,11 @@ class Pickler(pickle.Pickler):
             the module must be importable. If this is not the case or if
             the content of the module might change, you should tell the pickler
             to pickle the module by value.
+
+        .. attribute:: dispatch
+
+            A per instance version of the global dispatch table :attr:`pickle.Pickler.dispatch`.
+            Using a per instance dispatch table keeps the global table unchanged.
         """
         if protocol < 0:
             protocol = pickle.HIGHEST_PROTOCOL
