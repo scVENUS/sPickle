@@ -40,6 +40,7 @@ import logging
 import operator
 import weakref
 import abc
+import inspect
 
 from .. import _sPickle
 from . import wf_module
@@ -857,7 +858,9 @@ class PicklingTest(TestCase):
         orig = os.path
         self.assertNotEqual(orig.__name__, "os.path")
         mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__, returnStr=True)
-        p = self.dumpWithPreobjects(None, orig.join, dis=False,
+        orig_join = orig.join
+        _sPickle.ObjectDispatchBuilder.get_default_instance().object_dispatch.pop(id(orig_join), None)
+        p = self.dumpWithPreobjects(None, orig_join, dis=False,
                                     mangleModuleName=mmn
                                     )
 
@@ -867,13 +870,15 @@ class PicklingTest(TestCase):
         self.assertIn("os.path", modules)
 
         obj = self.pickler.loads(p)[1]
-        self.assertIs(obj, orig.join)
+        self.assertIs(obj, orig_join)
 
     def testOsPathJoin_MangleModuleName2(self):
         orig = os.path
         self.assertNotEqual(orig.__name__, "os.path")
+        orig_join = orig.join
         mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__)
-        p = self.dumpWithPreobjects(None, orig.join, dis=False,
+        _sPickle.ObjectDispatchBuilder.get_default_instance().object_dispatch.pop(id(orig_join), None)
+        p = self.dumpWithPreobjects(None, orig_join, dis=False,
                                     mangleModuleName=mmn
                                     )
 
@@ -883,7 +888,7 @@ class PicklingTest(TestCase):
         self.assertNotIn("os.path", modules)
 
         obj = self.pickler.loads(p)[1]
-        self.assertIs(obj, orig.join)
+        self.assertIs(obj, orig_join)
 
     @skipIf(gtk is None, "gtk not available")
     def testGtk(self):
@@ -1993,6 +1998,69 @@ class PicklingTest(TestCase):
         for module in importList:
             self.assertIsInstance(module, str)
             self.assertEqual(len(module.split(" ")), 2)
+
+    def testObjectDispatch_object_dispatch(self):
+        object_dispatch = _sPickle.Pickler([]).object_dispatch
+        object_dispatch2 = _sPickle.Pickler([]).object_dispatch
+        self.assertIsNot(object_dispatch, object_dispatch2)
+        self.assertDictEqual(object_dispatch, object_dispatch2)
+
+    def testObjectDispatch_entries_types(self):
+        # test the object_dispatch table contains all class entries from the
+        # module "types". This test is required to ensure compatibility
+        # with previous versions of sPickle
+        object_dispatch = _sPickle.Pickler([]).object_dispatch
+        ftor = _sPickle.ObjectDispatchBuilder._ImportValue
+        for k in dir(types):
+            obj = getattr(types, k)
+            if not inspect.isclass(obj):
+                continue
+            obj_id = id(obj)
+            self.assertIn(obj_id, object_dispatch)
+            od = object_dispatch[obj_id]
+            od = od[1]
+            self.assertIsInstance(od, ftor)
+            self.assertEqual(od.module_name, "types")
+            # there are many alias names in types
+            self.assertIs(obj, getattr(types, od.item_name))
+
+    def testObjectDispatch_entries_os_getcwd(self):
+        # test the object_dispatch function of the pickler
+        # For instance the function os.getcwd should be in the table,
+        # because the implementation differs between operating systems
+        object_dispatch = _sPickle.Pickler([]).object_dispatch
+        obj = os.getcwd
+        self.assertNotEqual(obj.__module__, 'os')
+
+        obj_id = id(obj)
+        od = object_dispatch[obj_id][1]
+        self.assertEqual(od.module_name, 'os')
+        self.assertEqual(od.item_name, 'getcwd')
+
+    def testObjectDispatch_entries_os_path(self):
+        # test the object_dispatch function of the pickler
+        l = []
+        pickler = _sPickle.Pickler(l)
+        object_dispatch = pickler.object_dispatch
+        obj = os.path.isdir
+        self.assertNotEqual(obj.__module__, 'os.path')
+
+        obj_id = id(obj)
+        # by default members of os.path are not in the object_dispatch table
+        self.assertNotIn(obj_id, object_dispatch)
+
+        api_analyser = pickler.object_dispatch_builder
+        api_analyser.append_pending_analysis_queue('os.path')
+        api_analyser.build()
+
+        od = object_dispatch[obj_id][1]
+        self.assertEqual(od.module_name, 'os.path')
+        self.assertEqual(od.item_name, 'isdir')
+
+        pickler.dump(obj)
+        p = b"".join(l)
+        importList = self.pickler.getImportList(p)
+        self.assertListEqual(importList, ['os.path isdir'])
 
     #
     # Handling of resource objects (files, socket, socketpair)

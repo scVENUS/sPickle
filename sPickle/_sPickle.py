@@ -391,6 +391,31 @@ class Pickler(pickle.Pickler):
 
             A per instance version of the global dispatch table :attr:`pickle.Pickler.dispatch`.
             Using a per instance dispatch table keeps the global table unchanged.
+
+        .. attribute:: object_dispatch
+
+            Certain "global" objects require a special treatment, because the values
+            of their attributes ``__module__`` and / or ``__name__`` are missing, wrong or
+            otherwise not useful. Examples include platform dependent implementations of
+            standard functions like :func:`os.getcwd`, which reports to be ``nt.getcwd`` or
+            various types from the module :mod:`types`. The attribute :attr:`object_dispatch`
+            is a mapping from a numeric  object id - as returned by :func:`id` - to a callable,
+            which takes two arguments: first the pickler and then
+            the object to be pickled. If the pickler finds the id of an object to be pickled
+            in :attr:`object_dispatch`, it dispatches pickling to the callable.
+
+            As a special extension, the value of an item from :attr:`object_dispatch` can also
+            be a :class:`tuple` of length 2. In this case the second item must be the callable.
+            The pickler ignores the first item.
+
+            The pickler sets this attribute to the value of the
+            attribute :attr:`ObjectDispatchBuilder.object_dispatch` of :attr:`object_dispatch_builder`
+            and adds a few additional entries for special cases.
+
+        .. attribute:: object_dispatch_builder
+
+            This attribute is a copy of the default :class:`ObjectDispatchBuilder` as returned
+            by :meth:`~ObjectDispatchBuilder.get_default_instance`.
         """
         if protocol < 0:
             protocol = pickle.HIGHEST_PROTOCOL
@@ -487,7 +512,11 @@ class Pickler(pickle.Pickler):
 
         # used to pickle special objects. Holds callables with the signature (pickler, obj).
         # The key is the object id(), because the objects might not be hashable
-        self.object_dispatch = {
+        global_odb = ObjectDispatchBuilder.get_default_instance()
+        global_odb.build()
+        self.object_dispatch_builder = copy.copy(global_odb)
+        self.object_dispatch = self.object_dispatch_builder.object_dispatch
+        self.object_dispatch.update({
             id(WRAPPER_DESCRIPTOR_TYPE): self._save_object_wrapper_descriptor_type.__func__,
             id(METHOD_DESCRIPTOR_TYPE): self._save_object_method_descriptor_type.__func__,
             id(METHOD_WRAPPER_TYPE): self._save_object_method_wrapper_type.__func__,
@@ -505,7 +534,7 @@ class Pickler(pickle.Pickler):
             id(weakref.ReferenceType): self._save_object_weakref_reference_type.__func__,
             id(weakref.ProxyType): self._save_object_weakref_proxy_type.__func__,
             id(weakref.CallableProxyType): self._save_object_weakref_callableproxy_type.__func__,
-        }
+        })
 
     def _save_object_wrapper_descriptor_type(self, obj):
         return self.save_reduce(type, (SPickleTools.reducer(getattr, (object, "__getattribute__")), ), obj=obj)

@@ -45,6 +45,9 @@ what could be done.
 .. autoclass:: Pickler
    :members: analysePicklerStack
 
+.. autoclass:: ObjectDispatchBuilder
+   :members:
+
 .. autoclass:: SPickleTools
    :members:
 
