@@ -44,6 +44,8 @@ import codecs
 import weakref
 import abc
 import contextlib
+import numbers
+import copy
 
 PY2 = True
 
@@ -673,6 +675,9 @@ class Pickler(pickle.Pickler):
         # singleton objects (built-in types, empty iterators, ...)
         x = self.object_dispatch.get(obj_id)
         if x is not None:
+            if isinstance(x, tuple) and len(x) == 2:
+                # the ObjectDispatchBuilder creates object_dispatch values of type tuple(priority, callable)
+                x = x[1]
             x(self, obj)
             return
 
@@ -1989,6 +1994,535 @@ class FailSavePickler(Pickler):
         :returns: a pickleable surrogate for obj or 'exception'.
         """
         return exception
+
+
+class ObjectDispatchBuilder(object):
+    """
+    A builder for the :attr:`~Pickler.object_dispatch` table of a :class:`~Pickler`
+
+    A :class:`ObjectDispatchBuilder` has a list of names of API-modules. It
+    inspects theses modules and looks for public objects, that won't be pickled by
+    value (strings, numbers, lists, dicts, sets, modules) and have unusable
+    values of their attributes ``__module__`` and/or ``__name__``. The builder
+    adds an item to the :attr:`object_dispatch` mapping for each problematic object.
+
+    :param modules: see method :meth:`extend_pending_analysis_queue`
+
+    .. attribute:: ALL_PORTABLE_STDLIB_MODULES
+
+        A constant list of portable modules in the Python 2.7.9 standard library.
+
+    .. attribute:: DEFAULT_PRIO1
+
+        The default priority for module entries, which were enumerated in the module
+        variable ``__all__``. Because the author of the module explicitly
+        declared those names, they get a higher priority.
+
+    .. attribute:: DEFAULT_PRIO2
+
+        The default priority for public module entries from a module without
+        a ``__all__`` variable.
+
+    .. attribute:: object_dispatch
+
+        The attribute :attr:`object_dispatch`
+        is a mapping from a numeric  object id - as returned by :func:`id` - to a 2-tuple (:dfn:`priority`, :dfn:`callable`).
+        The callable takes two arguments: first the pickler and then the object to be pickled. The callable
+        must use the pickler to pickle the object.
+
+        The priority is a numeric value and indicates how "good" a API module is. This is a heuristic approach
+        to the problem, that many API modules without an ``__all__`` variable accidently export objects imported
+        from other modules. If an object is exported by more than one API-module, the :class:`~ObjectDispatchBuilder`
+        uses the module with the highest priority.
+
+    .. attribute:: acceptable_module_names
+
+        Intentionally undocumented.
+    """
+
+    DEFAULT_PRIO1 = 100
+    DEFAULT_PRIO2 = 10
+
+    # intentionally missing __builtin__, sys, ctypes, ntpath, posixpath, ... and os.path
+    # It would be possible to add either os.path or (posixpath, ntpath, macpath, os2emxpath), but not
+    # both.
+    ALL_PORTABLE_STDLIB_MODULES = (
+        "abc",
+        "aifc",
+        "anydbm",
+        "argparse",
+        "array",
+        "ast",
+        "asynchat",
+        "asyncore",
+        "atexit",
+        "audioop",
+        "base64",
+        "BaseHTTPServer",
+        "bdb",
+        "binascii",
+        "binhex",
+        "bisect",
+        "bsddb",
+        "bz2",
+        "calendar",
+        "cgi",
+        "CGIHTTPServer",
+        "cgitb",
+        "chunk",
+        "cmath",
+        "cmd",
+        "code",
+        "codecs",
+        "codeop",
+        "collections",
+        "colorsys",
+        "compileall",
+        "ConfigParser",
+        "contextlib",
+        "Cookie",
+        "cookielib",
+        "copy",
+        "copy_reg",
+        "cPickle",
+        "cProfile",
+        "cStringIO",
+        "csv",
+        # "ctypes",
+        "datetime",
+        "dbhash",
+        "decimal",
+        "difflib",
+        "dis",
+        "doctest",
+        "DocXMLRPCServer",
+        "dumbdbm",
+        "dummy_thread",
+        "dummy_threading",
+        "email",
+        "email.charset",
+        "email.encoders",
+        "email.errors",
+        "email.generator",
+        "email.header",
+        "email.iterators",
+        "email.message",
+        "email.mime",
+        "email.parser",
+        "email.utils",
+        "encodings",
+        "encodings.idna",
+        "encodings.utf_8_sig",
+        "ensurepip",
+        "errno",
+        "exceptions",
+        "filecmp",
+        "fileinput",
+        "fnmatch",
+        "formatter",
+        "fractions",
+        "ftplib",
+        "functools",
+        "future_builtins",
+        "gc",
+        "getopt",
+        "getpass",
+        "gettext",
+        "glob",
+        "gzip",
+        "hashlib",
+        "heapq",
+        "hmac",
+        "hotshot",
+        "hotshot.stats",
+        "htmlentitydefs",
+        "HTMLParser",
+        "httplib",
+        "imaplib",
+        "imghdr",
+        "imp",
+        "importlib",
+        "inspect",
+        "io",
+        "itertools",
+        "json",
+        "keyword",
+        "lib2to3",
+        "linecache",
+        "locale",
+        "logging",
+        "logging.config",
+        "logging.handlers",
+        "macpath",
+        "mailbox",
+        "mailcap",
+        "marshal",
+        "math",
+        "mimetypes",
+        "mmap",
+        "modulefinder",
+        "multiprocessing",
+        "multiprocessing.connection",
+        "multiprocessing.dummy",
+        "multiprocessing.managers",
+        "multiprocessing.pool",
+        "multiprocessing.sharedctypes",
+        "netrc",
+        "nntplib",
+        "numbers",
+        "operator",
+        "os",
+        # "os.path",  # not included, because os.path is an alias for ntpath, posixpath, ...
+        "parser",
+        "pdb",
+        "pickle",
+        "pickletools",
+        "pkgutil",
+        "platform",
+        "plistlib",
+        "poplib",
+        "pprint",
+        "profile",
+        "pstats",
+        "py_compile",
+        "pyclbr",
+        "pydoc",
+        "Queue",
+        "quopri",
+        "random",
+        "re",
+        "rlcompleter",
+        "robotparser",
+        "runpy",
+        "sched",
+        "ScrolledText",
+        "select",
+        "shelve",
+        "shlex",
+        "shutil",
+        "signal",
+        "SimpleHTTPServer",
+        "SimpleXMLRPCServer",
+        "site",
+        "smtpd",
+        "smtplib",
+        "sndhdr",
+        "socket",
+        "SocketServer",
+        "sqlite3",
+        "ssl",
+        "stackless",
+        "stat",
+        "string",
+        "StringIO",
+        "stringprep",
+        "struct",
+        "subprocess",
+        "sunau",
+        "symbol",
+        "symtable",
+        # "sys",
+        "sysconfig",
+        "tabnanny",
+        "tarfile",
+        "telnetlib",
+        "tempfile",
+        "test",
+        "test.test_support",
+        "textwrap",
+        "thread",
+        "threading",
+        "time",
+        "timeit",
+        "Tix",
+        "Tkinter",
+        "token",
+        "tokenize",
+        "trace",
+        "traceback",
+        "ttk",
+        "turtle",
+        # compatibility with older versions of sPickle. They contained code, that preferred
+        # global symbols from module "types"
+        ("types", DEFAULT_PRIO1 + 1),
+        "unicodedata",
+        "unittest",
+        "urllib",
+        "urllib2",
+        "urlparse",
+        "UserDict",
+        "UserList",
+        "UserString",
+        "uu",
+        "uuid",
+        "warnings",
+        "wave",
+        "weakref",
+        "webbrowser",
+        "whichdb",
+        "wsgiref",
+        "wsgiref.handlers",
+        "wsgiref.headers",
+        "wsgiref.simple_server",
+        "wsgiref.util",
+        "wsgiref.validate",
+        "xdrlib",
+        "xml",
+        "xml.dom",
+        "xml.dom.minidom",
+        "xml.dom.pulldom",
+        "xml.etree.ElementTree",
+        "xml.parsers.expat",
+        "xml.sax",
+        "xml.sax.handler",
+        "xml.sax.saxutils",
+        "xml.sax.xmlreader",
+        "xmlrpclib",
+        "zipfile",
+        "zipimport",
+        "zlib",
+    )
+
+    def __init__(self, modules=None):
+        if modules is None:
+            modules = self.ALL_PORTABLE_STDLIB_MODULES
+        self._pending_analysis_queue = list(modules)
+        self.acceptable_module_names = set(self.ALL_PORTABLE_STDLIB_MODULES)
+        self._analysed_modules = {}
+        self.object_dispatch = {}
+
+    def __copy__(self):
+        new = self.__class__(self._pending_analysis_queue)
+        cp = copy.copy
+        new.acceptable_module_names = cp(self.acceptable_module_names)
+        new._analysed_modules = cp(self._analysed_modules)
+        new.object_dispatch = cp(self.object_dispatch)
+        return new
+
+    def __item2name_prios(self, item):
+        if not isinstance(item, basestring) and isinstance(item, collections.Sequence):
+            name_length = len(item)
+            if name_length >= 3:
+                name, prio1, prio2 = item[0:3]
+            elif name_length == 2:
+                name, prio1 = item[0:2]
+                prio2 = prio1
+            elif name_length == 1:
+                name = item[0]
+                prio1 = self.DEFAULT_PRIO1
+                prio2 = self.DEFAULT_PRIO2
+            else:
+                raise ValueError("analysis queue item must not be empty")
+        else:
+            name = item
+            prio1 = self.DEFAULT_PRIO1
+            prio2 = self.DEFAULT_PRIO2
+        return name, prio1, prio2
+
+    def append_pending_analysis_queue(self, name, prio1=None, prio2=None):
+        """
+        Append a single module to the list of API modules.
+
+        :param name: the module name
+        :type name: str
+        :param prio1: the priority of the module, if the module has the
+            variable ``__all__``. Default is :attr:`DEFAULT_PRIO1``.
+        :type prio1: int
+        :param prio2: the priority of the module, if the module lacks the
+            variable ``__all__``. Default is the value of *prio1*.
+        :type prio2: int
+        """
+        if prio1 is None:
+            prio1 = self.DEFAULT_PRIO1
+        if prio2 is None:
+            prio2 = prio1
+        p = self._analysed_modules.get(name, -1)
+        if p < min(prio1, prio2):
+            self._pending_analysis_queue.append((name, prio1, prio2))
+            self.acceptable_module_names.add(name)
+
+    def extend_pending_analysis_queue(self, modules):
+        """
+        Extend the list of API modules by *modules*.
+
+        :param modules: the iterable collection of :dfn:`module specifications` to be considered.
+            A module specification is one of
+
+            * name (str) of a module
+            * a sequence (name, priority) of a module
+            * a sequence (name, prio1, prio2) of a module
+
+            For the meaning of the priority values see method :meth:`append_pending_analysis_queue`.
+        :type modules: an iterable collection
+        """
+        for item in modules:
+            name, prio1, prio2 = self.__item2name_prios(item)
+            p = self._analysed_modules.get(name, -1)
+            if p < min(prio1, prio2):
+                self._pending_analysis_queue.append(item)
+                self.acceptable_module_names.add(name)
+
+    def build(self):
+        """
+        Update the content of :attr:`object_dispatch`.
+        """
+        # process _pending_analysis_queue in a while loop, because the loop
+        # might modifies the queue
+        i = 0
+        while i < len(self._pending_analysis_queue):
+            try:
+                name = self._pending_analysis_queue[i]
+            except Exception:
+                break
+            name, prio1, prio2 = self.__item2name_prios(name)
+            try:
+                mod = sys.modules[name]
+            except Exception:
+                # The module has not been imported yet, don't analyse it
+                i += 1
+                continue
+
+            if mod is None:
+                # module does not exist (yet)
+                i += 1
+                continue
+
+            # analyse the module and remove it from the pending queue
+            del self._pending_analysis_queue[i]
+            self._analysed_modules[name] = self._analyseModule(mod, name, prio1, prio2)
+
+    class _ImportValue(object):
+        __slots__ = ('module_name', 'item_name')
+
+        def __init__(self, module_name, item_name):
+            self.module_name = module_name
+            self.item_name = item_name
+
+        def __call__(self, pickler, obj):
+            return pickler._write_import(obj, self.module_name, self.item_name)
+
+    def _analyseModule(self, module, import_name, prio1, prio2):
+        logger = LOGGER().getChild('ObjectDispatchBuilder')
+        prio_max = max(prio1, prio2)
+        try:
+            public_names = module.__all__
+            prio = prio1
+        except Exception:
+            public_names = [name for name in dir(module) if len(name) > 0 and name[0] != "_"]
+            prio = prio2
+
+        for name in public_names:
+            try:
+                obj = getattr(module, name)
+            except Exception:
+                continue
+
+            obj_id = id(obj)
+            try:
+                p = self.object_dispatch[obj_id]
+                if isinstance(p, tuple) and len(p) == 2:
+                    p = p[0]
+                else:
+                    p = 1000
+            except Exception:
+                p = None
+            has_dispatch = isinstance(p, numbers.Real)
+            if has_dispatch and p >= prio_max:
+                # short cut
+                logger.info("ObjectDispatchBuilder: keeping object_dispatch (prio %s) for <%s> %s.%s: max priority to low %s", p, obj_id, import_name, name, prio_max)
+                continue
+
+            # exclude all types, that are pickled by value
+            if isinstance(obj, (types.NoneType, basestring, tuple, list, dict, numbers.Number, types.ModuleType)):
+                logger.debug("ObjectDispatchBuilder: ignoring %s.%s: it has a simple type : %s", import_name, name, type(obj))
+                continue
+            try:
+                obj_name = getattr(obj, '__name__')
+            except Exception:
+                obj_name = None
+            try:
+                obj_module_name = getattr(obj, '__module__')
+            except Exception:
+                obj_module_name = None
+            if obj_module_name is None and isinstance(obj_name, types.StringType) and obj_name:
+                obj_module_name = pickle.whichmodule(obj, obj_name)
+
+            is_reflection_data_valid = False  # is an object_dispatch entry required
+            obj_prio = prio         # the priority of the introspection data for this object
+            if obj_name and obj_module_name:
+                if obj_module_name == import_name:
+                    if obj_name == name:
+                        # introspection data is perfectly correct
+                        is_reflection_data_valid = True
+                        logger.debug("ObjectDispatchBuilder: %s.%s has regular reflection data", import_name, name)
+                    elif obj_name in public_names:
+                        # introspection data points to a different public name in the same module
+                        try:
+                            # test, if the objects are the same
+                            is_reflection_data_valid = obj is getattr(module, obj_name)
+                            logger.debug("ObjectDispatchBuilder: %s.%s reflection data points to %s.%s, valid=%s", import_name, name, obj_module_name, obj_name, is_reflection_data_valid)
+                        except Exception:
+                            pass
+                elif obj_module_name in self.acceptable_module_names:
+                    # introspection data points to a different acceptable module
+                    try:
+                        obj_module = sys.modules[obj_module_name]
+                        try:
+                            is_reflection_data_valid = obj_name in obj_module.__all__   # obj_module has __all__
+                            obj_prio_tmp = prio1
+                        except Exception:
+                            is_reflection_data_valid = len(obj_name) > 0 and obj_name[0] != '_'  # obj_module does not have __all__
+                            obj_prio_tmp = prio2
+                        if is_reflection_data_valid:
+                            # introspection data points to a public symbol
+                            # test, if the objects are the same
+                            is_reflection_data_valid = getattr(obj_module, obj_name) is obj
+                    except Exception:
+                        # either obj_module_name is not yet imported or does not contain obj_name
+                        is_reflection_data_valid = False
+                    else:
+                        if is_reflection_data_valid:
+                            # adjust the priority
+                            obj_prio = obj_prio_tmp - 1
+                    logger.debug("ObjectDispatchBuilder: %s.%s reflection data points to %s.%s, valid=%s", import_name, name, obj_module_name, obj_name, is_reflection_data_valid)
+
+            # can be imported from a different module as a public symbol
+            if has_dispatch and p >= obj_prio:
+                # the existing object_dispatch is good enough
+                logger.info("ObjectDispatchBuilder: keeping object_dispatch (prio %s) for <%s> %s.%s / %s.%s: priority to low %s", p, obj_id, obj_module_name, obj_name, import_name, name, obj_prio)
+                continue
+
+            if is_reflection_data_valid:
+                # no object_dispatch is required
+                if has_dispatch:
+                    # not dispatching is better than dispatching. Remove the entry.
+                    logger.info("ObjectDispatchBuilder: removing object_dispatch (prio %s -> %s) for <%s> %s.%s: reflection data is valid", p, obj_prio, obj_id, obj_module_name, obj_name)
+                    del self.object_dispatch[obj_id]
+                continue
+
+            # an object_dispatch entry is required
+            if has_dispatch:
+                logger.info("ObjectDispatchBuilder: replacing object_dispatch (prio %s -> %s) for <%s> %s.%s: import as %s.%s", p, obj_prio, obj_id, obj_module_name, obj_name, import_name, name)
+            else:
+                logger.info("ObjectDispatchBuilder: adding object_dispatch (prio %s) for <%s> %s.%s: import as %s.%s", obj_prio, obj_id, obj_module_name, obj_name, import_name, name)
+            self.object_dispatch[obj_id] = (obj_prio, self._ImportValue(import_name, name))
+        return prio
+
+    @classmethod
+    def get_default_instance(cls):
+        """
+        Return a global default instance of class :class:`ObjectDispatchBuilder`.
+
+        :returns: the default object dispatch builder
+        :rtype: :class:`ObjectDispatchBuilder`
+        """
+        try:
+            return ObjectDispatchBuilder._DEFAULT_INSTANCE
+        except AttributeError:
+            instance = cls()
+            instance.build()
+            ObjectDispatchBuilder._DEFAULT_INSTANCE = instance
+        return ObjectDispatchBuilder._DEFAULT_INSTANCE
 
 
 class SPickleTools(object):

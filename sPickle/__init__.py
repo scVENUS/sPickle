@@ -70,8 +70,14 @@ from ._sPickle import (Pickler,  # @Reimport @IgnorePep8
                        FailSavePickler,
                        RecursionDetectedError,
                        UnpicklingWillFailError,
+                       ObjectDispatchBuilder,
                        )
 from pickle import __all__  # @IgnorePep8
 
 __all__ = __all__[:]
-__all__.extend(('SPickleTools', 'FailSavePickler', 'MODULE_TO_BE_PICKLED_FLAG_NAME', 'RecursionDetectedError', 'UnpicklingWillFailError'))
+__all__.extend(('SPickleTools',
+                'FailSavePickler',
+                'MODULE_TO_BE_PICKLED_FLAG_NAME',
+                'RecursionDetectedError',
+                'UnpicklingWillFailError',
+                'ObjectDispatchBuilder'))

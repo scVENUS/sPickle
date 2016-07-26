@@ -43,6 +43,7 @@ import abc
 
 from .. import _sPickle
 from . import wf_module
+import copy
 
 try:
     from stackless import _wrap
@@ -66,6 +67,8 @@ except ImportError:
     RPYC_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
+# disable info messages for the ODB
+_sPickle.LOGGER().getChild(_sPickle.ObjectDispatchBuilder.__name__).setLevel(logging.WARN)  # @UndefinedVariable
 
 
 class PEP302ImportDetector(object):
@@ -2357,6 +2360,31 @@ class SPickleToolsTest(TestCase):
         obj = pickler.loads(p)
         self.assertIsInstance(obj, int)
         self.assertEqual(obj, 3)
+
+
+class ObjectDispatchBuilderTest(TestCase):
+    def testBuild(self):
+        builder = _sPickle.ObjectDispatchBuilder()
+
+        self.assertDictEqual(builder.object_dispatch, {})
+        builder.build()
+        self.assertGreater(len(builder.object_dispatch), 220)
+
+    def testCopy(self):
+        builder = _sPickle.ObjectDispatchBuilder.get_default_instance()
+        builder2 = copy.copy(builder)
+        self.assertIs(type(builder), type(builder2))
+        self.assertIsNot(builder, builder2)
+
+        self.assertIsNot(builder.object_dispatch, builder2.object_dispatch)
+        self.assertIsNot(builder._pending_analysis_queue, builder2._pending_analysis_queue)
+        self.assertIsNot(builder.acceptable_module_names, builder2.acceptable_module_names)
+        self.assertIsNot(builder._analysed_modules, builder2._analysed_modules)
+
+        self.assertDictEqual(builder.object_dispatch, builder2.object_dispatch)
+        self.assertListEqual(builder._pending_analysis_queue, builder2._pending_analysis_queue)
+        self.assertSetEqual(builder.acceptable_module_names, builder2.acceptable_module_names)
+        self.assertDictEqual(builder._analysed_modules, builder2._analysed_modules)
 
 NT = collections.namedtuple("NT", "a")
 
