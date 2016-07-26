@@ -922,18 +922,12 @@ class Pickler(pickle.Pickler):
         if name is None:
             name = obj.__name__
 
-        module = None
-        if isClass:
-            for k in dir(types):
-                if obj is getattr(types, k, None):
-                    module = types.__name__
-                    name = k
-                    break
-
+        try:
+            module = getattr(obj, "__module__")
+        except Exception:
+            module = None
         if module is None:
-            module = getattr(obj, "__module__", None)
-            if module is None:
-                module = pickle.whichmodule(obj, name)
+            module = pickle.whichmodule(obj, name)
 
         try:
             mod = sys.modules[module]
