@@ -543,15 +543,21 @@ class Pickler(pickle.Pickler):
         return self.save_reduce(type, (NONE_CELL,), obj=obj)
 
     def _save_object_weakref_reference_type(self, obj):
-        self.write(pickle.GLOBAL + b'weakref\nReferenceType\n')
-        self.memoize(obj)
+        self._write_import(obj, b'weakref', b'ReferenceType')
 
     def _save_object_weakref_proxy_type(self, obj):
-        self.write(pickle.GLOBAL + b'weakref\nProxyType\n')
-        self.memoize(obj)
+        self._write_import(obj, b'weakref', b'ProxyType')
 
     def _save_object_weakref_callableproxy_type(self, obj):
-        self.write(pickle.GLOBAL + b'weakref\nCallableProxyType\n')
+        self._write_import(obj, b'weakref', b'CallableProxyType')
+
+    def _write_import(self, obj, module_name, item_name):
+        if isinstance(module_name, unicode):
+            module_name = module_name.encode("utf-8")
+        if isinstance(item_name, unicode):
+            item_name = item_name.encode("utf-8")
+
+        self.write(pickle.GLOBAL + b'%s\n%s\n' % (module_name, item_name))
         self.memoize(obj)
 
     def mustSerialize(self, obj):
@@ -832,8 +838,7 @@ class Pickler(pickle.Pickler):
 
     def save_dict(self, obj):
         if obj is sys.modules:
-            self.write(pickle.GLOBAL + b'sys' + b'\n' + b'modules' + b'\n')
-            self.memoize(obj)
+            self._write_import(obj, b'sys', b'modules')
             return
         self.do_checkpoint(obj, self._save_dict_impl)
 
@@ -944,8 +949,7 @@ class Pickler(pickle.Pickler):
 
         mangledModule = self.mangleModuleName(module, mod)
         if isinstance(mangledModule, str):
-            write(pickle.GLOBAL + mangledModule + b'\n' + name + b'\n')
-            self.memoize(obj)
+            self._write_import(obj, mangledModule, name)
         else:
             # The module name is computed at unpickling time.
             # Therefore we simply fetch obj from the module.
@@ -1490,8 +1494,7 @@ class Pickler(pickle.Pickler):
             sysname = "__stdin__"
         if sysname:
             self._logger.info("Pickling a reference to sys.%s", sysname)
-            self.write(pickle.GLOBAL + b"sys" + b'\n' + sysname.encode("utf-8") + b'\n')
-            self.memoize(obj)
+            self._write_import(obj, b"sys", sysname)
             return True
         return None
 
