@@ -337,55 +337,59 @@ class Pickler(pickle.Pickler):
                  serializeableModules=None, mangleModuleName=None,
                  logger=None):
         """
-        The file argument must be either an instance of :class:`collections.MutableSequence`
-        or have a `write(str)` - method that accepts a single
-        string argument.  It can thus be an open file object, a StringIO
-        object, or any other custom object that meets this interface.
-        As an alternative you can use a list or any other instance of
-        collections.MutableSequence.
+        :param file: The file argument must be either an instance of :class:`collections.MutableSequence`
+            or have a `write(str)` - method that accepts a single
+            string argument.  It can thus be an open file object, a StringIO
+            object, or any other custom object that meets this interface.
+            As an alternative you can use a list or any other instance of
+            collections.MutableSequence.
 
-        The optional protocol argument tells the pickler to use the
-        given protocol; For this implementation,
-        the only supported protocol is 2 or `pickle.HIGHEST_PROTOCOL`.
-        Specifying a negative protocol version selects the highest
-        protocol version supported.  The higher the protocol used, the
-        more recent the version of Python needed to read the pickle
-        produced.
+        :param protocol: The optional protocol argument tells the pickler to use the
+            given protocol; For this implementation,
+            the only supported protocol is 2 or `pickle.HIGHEST_PROTOCOL`.
+            Specifying a negative protocol version selects the highest
+            protocol version supported.  The higher the protocol used, the
+            more recent the version of Python needed to read the pickle
+            produced.
+        :type protocol: int
 
-        The optional argument *serializeableModules* must be an iterable
-        collection of modules and strings. If the pickler needs to serialize
-        a module, it checks this collection to decide, if the module needs to
-        be pickled by value or by name. The module gets pickled by value,
-        if at least one of the following conditions is true. Otherwise it
-        gets pickled by reference:
+        :param serializeableModules: The optional argument *serializeableModules* must be an iterable
+            collection of modules and strings. If the pickler needs to serialize
+            a module, it checks this collection to decide, if the module needs to
+            be pickled by value or by name. The module gets pickled by value,
+            if at least one of the following conditions is true. Otherwise it
+            gets pickled by reference:
 
-        * The module has a global variable named *__module_must_be_pickled__* and
-          the value of this variable is true.
-        * The module object is contained in *serializeableModules*.
-        * The the name of the module starts with a string contained
-          in *serializeableModules*.
-        * The module has the attribute `__file__` and *serializeableModules*
-          contains a string, that is a substring of `__file__` after applying
-          path and case normalization as appropriate for the current system.
+            * The module has a global variable named *__module_must_be_pickled__* and
+              the value of this variable is true.
+            * The module object is contained in *serializeableModules*.
+            * The the name of the module starts with a string contained
+              in *serializeableModules*.
+            * The module has the attribute `__file__` and *serializeableModules*
+              contains a string, that is a substring of `__file__` after applying
+              path and case normalization as appropriate for the current system.
 
-        The optional argument *logger* must be an instance of class
-        :class:`logging.Logger`. If given, it is used instead of the default
-        logger.
+        :param logger: The optional argument *logger* must be an instance of class
+            :class:`logging.Logger`. If given, it is used instead of the default
+            logger.
+        :type logger: :class:`logging.Logger`
 
-        Experimental feature: the optional argument *mangleModuleName*
-        must be a callable with three arguments. The first argument is this
-        pickler, the second the name of module and the third is `None` or
-        - if the caller is going to pickle a module reference - the module object.
-        The callable must return a pickleable object that unpickles as a string.
-        You can use this callable to rename modules in the pickle. For instance
-        you may want to replace "posixpath" by "os.path".
+        :param mangleModuleName: Experimental feature: the optional argument *mangleModuleName*
+            must be a callable with three arguments. The first argument is this
+            pickler, the second the name of module and the third is `None` or
+            - if the caller is going to pickle a module reference - the module object.
+            The callable must return a pickleable object that unpickles as a string.
+            You can use this callable to rename modules in the pickle. For instance
+            you may want to replace "posixpath" by "os.path".
 
-        .. note::
+            .. note::
 
-            In order to be able to unpickle a module pickled by name,
-            the module must be importable. If this is not the case or if
-            the content of the module might change, you should tell the pickler
-            to pickle the module by value.
+                In order to be able to unpickle a module pickled by name,
+                the module must be importable. If this is not the case or if
+                the content of the module might change, you should tell the pickler
+                to pickle the module by value.
+
+        .. rubric:: Attributes and Methods
 
         .. attribute:: dispatch
 
