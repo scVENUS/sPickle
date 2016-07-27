@@ -404,10 +404,6 @@ class Pickler(pickle.Pickler):
             the object to be pickled. If the pickler finds the id of an object to be pickled
             in :attr:`object_dispatch`, it dispatches pickling to the callable.
 
-            As a special extension, the value of an item from :attr:`object_dispatch` can also
-            be a :class:`tuple` of length 2. In this case the second item must be the callable.
-            The pickler ignores the first item.
-
             The pickler sets this attribute to the value of the
             attribute :attr:`ObjectDispatchBuilder.object_dispatch` of :attr:`object_dispatch_builder`
             and adds a few additional entries for special cases.
@@ -704,9 +700,6 @@ class Pickler(pickle.Pickler):
         # singleton objects (built-in types, empty iterators, ...)
         x = self.object_dispatch.get(obj_id)
         if x is not None:
-            if isinstance(x, tuple) and len(x) == 2:
-                # the ObjectDispatchBuilder creates object_dispatch values of type tuple(priority, callable)
-                x = x[1]
             x(self, obj)
             return
 
@@ -2049,14 +2042,15 @@ class ObjectDispatchBuilder(object):
     .. attribute:: object_dispatch
 
         The attribute :attr:`object_dispatch`
-        is a mapping from a numeric  object id - as returned by :func:`id` - to a 2-tuple (:dfn:`priority`, :dfn:`callable`).
+        is a mapping from a numeric  object id - as returned by :func:`id` - to a callable.
         The callable takes two arguments: first the pickler and then the object to be pickled. The callable
         must use the pickler to pickle the object.
 
-        The priority is a numeric value and indicates how "good" a API module is. This is a heuristic approach
-        to the problem, that many API modules without an ``__all__`` variable accidently export objects imported
-        from other modules. If an object is exported by more than one API-module, the :class:`~ObjectDispatchBuilder`
-        uses the module with the highest priority.
+        The callable has a numerical priority. The priority is the value of the callable´s attribute ``priority`` or,
+        if the callable lacks the attribute, 1000. The priority indicates how "good" a API module is.
+        This is a heuristic approach to the problem, that many API modules without an ``__all__``
+        variable accidently export objects imported from other modules. If an object is exported
+        by more than one API-module, the :class:`~ObjectDispatchBuilder` uses the module with the highest priority.
 
     .. attribute:: acceptable_module_names
 
@@ -2415,11 +2409,12 @@ class ObjectDispatchBuilder(object):
             self._analysed_modules[name] = self._analyseModule(mod, name, prio1, prio2)
 
     class _ImportValue(object):
-        __slots__ = ('module_name', 'item_name')
+        __slots__ = ('module_name', 'item_name', 'priority')
 
-        def __init__(self, module_name, item_name):
+        def __init__(self, module_name, item_name, priority):
             self.module_name = module_name
             self.item_name = item_name
+            self.priority = priority
 
         def __call__(self, pickler, obj):
             return pickler._write_import(obj, self.module_name, self.item_name)
@@ -2442,11 +2437,7 @@ class ObjectDispatchBuilder(object):
 
             obj_id = id(obj)
             try:
-                p = self.object_dispatch[obj_id]
-                if isinstance(p, tuple) and len(p) == 2:
-                    p = p[0]
-                else:
-                    p = 1000
+                p = getattr(self.object_dispatch[obj_id], "priority", 1000)
             except Exception:
                 p = None
             has_dispatch = isinstance(p, numbers.Real)
@@ -2528,7 +2519,7 @@ class ObjectDispatchBuilder(object):
                 logger.info("ObjectDispatchBuilder: replacing object_dispatch (prio %s -> %s) for <%s> %s.%s: import as %s.%s", p, obj_prio, obj_id, obj_module_name, obj_name, import_name, name)
             else:
                 logger.info("ObjectDispatchBuilder: adding object_dispatch (prio %s) for <%s> %s.%s: import as %s.%s", obj_prio, obj_id, obj_module_name, obj_name, import_name, name)
-            self.object_dispatch[obj_id] = (obj_prio, self._ImportValue(import_name, name))
+            self.object_dispatch[obj_id] = self._ImportValue(import_name, name, obj_prio)
         return prio
 
     @classmethod

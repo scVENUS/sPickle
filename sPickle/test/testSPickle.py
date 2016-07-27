@@ -2018,7 +2018,6 @@ class PicklingTest(TestCase):
             obj_id = id(obj)
             self.assertIn(obj_id, object_dispatch)
             od = object_dispatch[obj_id]
-            od = od[1]
             self.assertIsInstance(od, ftor)
             self.assertEqual(od.module_name, "types")
             # there are many alias names in types
@@ -2033,7 +2032,7 @@ class PicklingTest(TestCase):
         self.assertNotEqual(obj.__module__, 'os')
 
         obj_id = id(obj)
-        od = object_dispatch[obj_id][1]
+        od = object_dispatch[obj_id]
         self.assertEqual(od.module_name, 'os')
         self.assertEqual(od.item_name, 'getcwd')
 
@@ -2053,7 +2052,7 @@ class PicklingTest(TestCase):
         api_analyser.append_pending_analysis_queue('os.path')
         api_analyser.build()
 
-        od = object_dispatch[obj_id][1]
+        od = object_dispatch[obj_id]
         self.assertEqual(od.module_name, 'os.path')
         self.assertEqual(od.item_name, 'isdir')
 
