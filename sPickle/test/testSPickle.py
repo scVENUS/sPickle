@@ -531,7 +531,9 @@ class PicklingTest(TestCase):
             # ensure that the pickler does not touch sys.modules more than required
             with PEP302ImportDetector(raiseOn=kw.get("raiseOn")) as detector:
                 sys_modules = dict(sys.modules)
-                p = self.pickler.dumps(toBeDumped, mangleModuleName=kw.get("mangleModuleName"))
+                p = self.pickler.dumps(toBeDumped,
+                                       mangleModuleName=kw.get("mangleModuleName"),
+                                       object_dispatch=kw.get("object_dispatch"))
                 sys_modules2 = dict(sys.modules)
             imports = set()
             for n in detector.imports:
@@ -549,7 +551,7 @@ class PicklingTest(TestCase):
             exinfo = sys.exc_info()
             l = []
             try:
-                _sPickle.Pickler(l, 2).dump(toBeDumped)
+                _sPickle.Pickler(l, 2, object_dispatch=kw.get("object_dispatch")).dump(toBeDumped)
             except Exception:
                 try:
                     l.append(pickle.STOP)
@@ -859,9 +861,9 @@ class PicklingTest(TestCase):
         self.assertNotEqual(orig.__name__, "os.path")
         mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__, returnStr=True)
         orig_join = orig.join
-        _sPickle.ObjectDispatchBuilder.get_default_instance().object_dispatch.pop(id(orig_join), None)
         p = self.dumpWithPreobjects(None, orig_join, dis=False,
-                                    mangleModuleName=mmn
+                                    mangleModuleName=mmn,
+                                    object_dispatch=_sPickle.ObjectDispatchBuilder()
                                     )
 
         il = self.pickler.getImportList(p)
@@ -877,9 +879,9 @@ class PicklingTest(TestCase):
         self.assertNotEqual(orig.__name__, "os.path")
         orig_join = orig.join
         mmn = self.MangleModuleName("DOES NOT APPLY", "", package=orig.__name__)
-        _sPickle.ObjectDispatchBuilder.get_default_instance().object_dispatch.pop(id(orig_join), None)
         p = self.dumpWithPreobjects(None, orig_join, dis=False,
-                                    mangleModuleName=mmn
+                                    mangleModuleName=mmn,
+                                    object_dispatch=_sPickle.ObjectDispatchBuilder()
                                     )
 
         il = self.pickler.getImportList(p)
@@ -2039,7 +2041,7 @@ class PicklingTest(TestCase):
     def testObjectDispatch_entries_os_path(self):
         # test the object_dispatch function of the pickler
         l = []
-        pickler = _sPickle.Pickler(l)
+        pickler = _sPickle.Pickler(l, object_dispatch=_sPickle.ObjectDispatchBuilder())
         object_dispatch = pickler.object_dispatch
         obj = os.path.isdir
         self.assertNotEqual(obj.__module__, 'os.path')
