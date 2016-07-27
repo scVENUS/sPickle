@@ -71,7 +71,7 @@ differences under the hood.
 Support
 =======
 There is currently no support available, but you can drop me a mail.
-a [dot] kruis [at] science-computing [dot] de
+a [dot] kruis [at] atos [dot] net
 or use the facilities provided by https://github.com/akruis/sPickle
 
 Plan
@@ -80,6 +80,9 @@ No further plans currently
 
 
 ### Changes ###
+
+Version 0.1.11
+--------------
 
 2016-07-27
 - Improved the pickling of global objects from the Python standard library
