@@ -335,7 +335,7 @@ class Pickler(pickle.Pickler):
     def __init__(self, file,  # @ReservedAssignment
                  protocol=pickle.HIGHEST_PROTOCOL,
                  serializeableModules=None, mangleModuleName=None,
-                 logger=None):
+                 logger=None, object_dispatch=None):
         """
         :param file: The file argument must be either an instance of :class:`collections.MutableSequence`
             or have a `write(str)` - method that accepts a single
@@ -389,6 +389,18 @@ class Pickler(pickle.Pickler):
                 the content of the module might change, you should tell the pickler
                 to pickle the module by value.
 
+        :param object_dispatch: Experimental feature: the optional argument
+            *object_dispatch* must be either an :class:`ObjectDispatchBuilder` or
+            a :class:`~collections.MutableMapping` from
+            numeric object ids - as returned by id() - to callables, which take two arguments,
+            first the pickler and then the object to be pickled.
+            It is used to initialize the attributes
+            :attr:`object_dispatch_builder` and :attr:`object_dispatch`. If no value
+            is given, the :class:`Pickler` updates the global
+            default :class:`ObjectDispatchBuilder` (as returned
+            by :meth:`~ObjectDispatchBuilder.get_default_instance`) and then sets
+            *object_dispatch* to a shallow copy of the global :class:`ObjectDispatchBuilder`.
+
         .. rubric:: Attributes and Methods
 
         .. attribute:: dispatch
@@ -408,14 +420,18 @@ class Pickler(pickle.Pickler):
             the object to be pickled. If the pickler finds the id of an object to be pickled
             in :attr:`object_dispatch`, it dispatches pickling to the callable.
 
-            The pickler sets this attribute to the value of the
-            attribute :attr:`ObjectDispatchBuilder.object_dispatch` of :attr:`object_dispatch_builder`
-            and adds a few additional entries for special cases.
+            If the constructor argument *object_dispatch* was a :class:`~collections.MutableMapping`,
+            the pickler sets this attribute to *object_dispatch*. Otherwise the pickler sets
+            :attr:`object_dispatch` to ``object_dispatch.object_dispatch``.
+            Finally the pickler adds a few additional entries to the mapping for special cases.
 
         .. attribute:: object_dispatch_builder
 
-            This attribute is a copy of the default :class:`ObjectDispatchBuilder` as returned
+            If the constructor argument *object_dispatch* was not a :class:`~collections.MutableMapping`,
+            this attribute is the value of *object_dispatch* or, if *object_dispatch* was `None`
+            a copy of the default :class:`ObjectDispatchBuilder` as returned
             by :meth:`~ObjectDispatchBuilder.get_default_instance`.
+            Otherwise :attr:`object_dispatch_builder` is `None`.
         """
         if protocol < 0:
             protocol = pickle.HIGHEST_PROTOCOL
@@ -510,12 +526,18 @@ class Pickler(pickle.Pickler):
         # Used for class creation
         self.delayedClassSetAttrList = []
 
-        # used to pickle special objects. Holds callables with the signature (pickler, obj).
+        self.object_dispatch_builder = None
+        if object_dispatch is None:
+            global_odb = ObjectDispatchBuilder.get_default_instance()
+            global_odb.build()
+            object_dispatch = copy.copy(global_odb)
+        if not isinstance(object_dispatch, collections.MutableMapping):
+            self.object_dispatch_builder = object_dispatch
+            object_dispatch = self.object_dispatch_builder.object_dispatch
+
+        # used to pickle special objects. Holds callables with the signature (pickler, obj)
         # The key is the object id(), because the objects might not be hashable
-        global_odb = ObjectDispatchBuilder.get_default_instance()
-        global_odb.build()
-        self.object_dispatch_builder = copy.copy(global_odb)
-        self.object_dispatch = self.object_dispatch_builder.object_dispatch
+        self.object_dispatch = object_dispatch
         self.object_dispatch.update({
             id(WRAPPER_DESCRIPTOR_TYPE): self._save_object_wrapper_descriptor_type.__func__,
             id(METHOD_DESCRIPTOR_TYPE): self._save_object_method_descriptor_type.__func__,
@@ -2558,15 +2580,16 @@ class SPickleTools(object):
         The optional argument serializeableModules is passed
         on to the class :class:`Pickler`.
 
-        The optional arguments pickler_class can be used to set a different
-        pickler class.
+        The optional argument *pickler_class* can be used to set a different
+        pickler class. It must accept the same arguments as class :class:`Pickler`.
         """
         if serializeableModules is None:
             serializeableModules = []
         self.serializeableModules = serializeableModules
         self.pickler_class = Pickler if pickler_class is None else pickler_class
 
-    def dumps(self, obj, persistent_id=None, persistent_id_method=None, doCompress=True, mangleModuleName=None):
+    def dumps(self, obj, persistent_id=None, persistent_id_method=None, doCompress=True, mangleModuleName=None,
+              object_dispatch=None):
         """Pickle an object and return the pickle
 
         This method works similar to the regular dumps method, but
@@ -2608,12 +2631,19 @@ class SPickleTools(object):
 
                             spt = SPickleTools()
                             p = spt.dumps(object_to_be_pickled, mangleModuleName=mangleOsPath)
+        :param object_dispatch: the optional argument
+            *object_dispatch* must be either a :class:`~collections.MutableMapping` or
+            an :class:`ObjectDispatchBuilder`. It is passed on to the constructor of the pickler.
+            See :class:`Pickler` for details.
 
         :return: the pickle, optionally compressed
         :rtype: :class:`str`
         """
         l = []
-        pickler = self.pickler_class(l, 2, serializeableModules=self.serializeableModules, mangleModuleName=mangleModuleName)
+        pickler = self.pickler_class(l, 2,
+                                     serializeableModules=self.serializeableModules,
+                                     mangleModuleName=mangleModuleName,
+                                     object_dispatch=object_dispatch)
         if persistent_id is not None and persistent_id_method is not None:
             raise ValueError("At least one of persistent_id and persistent_id_method must be None")
         if persistent_id is not None:

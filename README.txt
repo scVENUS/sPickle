@@ -64,6 +64,9 @@ differences under the hood.
 * A sPickle Pickler has a list-typed attribute "serializeableModules". You can
   use this attribute to determine which modules are to be pickled. For
   details, read the comments in the source code and look at the examples.
+  
+* A sPickle Pickler has some (experimental) features to manipulate the content
+  of the created pickle and to handle/replace objects, which can not be pickled. 
 
 Support
 =======
@@ -77,6 +80,12 @@ No further plans currently
 
 
 ### Changes ###
+
+2016-07-27
+- Improved the pickling of global objects from the Python standard library
+  with missing or incorrect or misleading  values of "__module__" and/or
+  "__name__". This change adds a new class ObjectDispatchBuilder and new
+  attributes "object_dispatch" and "object_dispatch_builder" of the pickler.
 
 Version 0.1.10
 --------------
